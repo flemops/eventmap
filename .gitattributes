@@ -1,0 +1,3 @@
+# Scripts et sources en LF : un CRLF dans install.sh donne "bad interpreter" sur Linux.
+* text=auto eol=lf
+*.sh text eol=lf
