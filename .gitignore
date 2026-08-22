@@ -1,0 +1,21 @@
+# Secrets et environnement — jamais versionnés
+*.env
+.env*
+*.key
+*.pem
+
+# Données locales
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Fichiers de travail
+*.log
+_smoke.py

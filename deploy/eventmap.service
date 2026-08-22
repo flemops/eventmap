@@ -1,0 +1,54 @@
+# /etc/systemd/system/eventmap.service
+#
+# La VM héberge aussi le portfolio : cette unité est bornée pour qu'une boucle
+# de refresh qui dérape soit tuée par le cgroup avant d'affecter le reste.
+
+[Unit]
+Description=EventMap FR (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=eventmap
+Group=eventmap
+WorkingDirectory=/opt/eventmap
+EnvironmentFile=/etc/eventmap.env
+ExecStart=/opt/eventmap/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 1 --no-access-log
+Restart=always
+RestartSec=5
+
+# --- Garde-fous ressources -------------------------------------------------
+# Le refresh QFAP tient en ~80 Mo ; 512 Mo laisse de la marge sans permettre
+# à une fuite de consommer les 24 Go. CPUQuota=50% = un demi-cœur sur quatre.
+MemoryMax=512M
+MemoryHigh=384M
+CPUQuota=50%
+Nice=10
+IOSchedulingClass=idle
+TasksMax=64
+
+# --- Durcissement ----------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+ReadWritePaths=/opt/eventmap/data
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+
+# --- Logs bornés -----------------------------------------------------------
+StandardOutput=journal
+StandardError=journal
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=200
+
+[Install]
+WantedBy=multi-user.target

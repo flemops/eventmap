@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Ce soir — EventMap</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<style>
+:root {
+  --bg: #0f1216; --panel: #171b21; --line: #262c35; --text: #e8ecf1; --muted: #8a94a3;
+  --accent: #4f9cf9; --free: #3dd68c; --paid: #f5a54a;
+  --radius: 12px; --safe-b: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #f6f7f9; --panel: #fff; --line: #e2e6ec; --text: #15181d; --muted: #5e6876; --accent: #1f6fd6; }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  display: flex; flex-direction: column; -webkit-font-smoothing: antialiased;
+}
+
+/* ---- barre de filtres : compacte, tout au pouce --------------------- */
+header {
+  padding: 10px 12px 8px; background: var(--panel); border-bottom: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 8px; flex: none;
+}
+.row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.row::-webkit-scrollbar { display: none; }
+.chip {
+  flex: none; padding: 7px 13px; border-radius: 999px; border: 1px solid var(--line);
+  background: transparent; color: var(--text); font: inherit; font-size: 14px; cursor: pointer;
+  white-space: nowrap;
+}
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.status { font-size: 13px; color: var(--muted); min-height: 1.2em; }
+.status strong { color: var(--text); }
+
+/* ---- carte + liste : empilés mobile, côte à côte desktop -------------- */
+main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#map { flex: 0 0 38vh; min-height: 200px; background: #222; }
+#list { flex: 1; overflow-y: auto; padding: 10px 12px calc(16px + var(--safe-b)); display: grid; gap: 8px; align-content: start; }
+@media (min-width: 900px) {
+  main { flex-direction: row; }
+  #map { flex: 1 1 55%; height: auto; }
+  #list { flex: 0 0 440px; border-left: 1px solid var(--line); }
+}
+
+/* ---- carte event ------------------------------------------------------ */
+.ev {
+  display: grid; grid-template-columns: 58px 1fr; gap: 10px; padding: 10px 12px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  text-decoration: none; color: inherit; cursor: pointer;
+}
+.ev:hover, .ev.active { border-color: var(--accent); }
+.when { display: flex; flex-direction: column; align-items: center; justify-content: center; border-right: 1px solid var(--line); padding-right: 10px; }
+.when b { font-size: 18px; line-height: 1; }
+.when small { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.ev h3 { margin: 0 0 3px; font-size: 15px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.meta { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.price { font-weight: 600; }
+.price.free { color: var(--free); }
+.price.paid { color: var(--paid); }
+.empty { text-align: center; color: var(--muted); padding: 40px 20px; }
+.empty b { display: block; color: var(--text); font-size: 18px; margin-bottom: 6px; }
+
+/* ---- Leaflet ------------------------------------------------------------ */
+.leaflet-popup-content-wrapper { background: var(--panel); color: var(--text); border-radius: 10px; }
+.leaflet-popup-tip { background: var(--panel); }
+.leaflet-popup-content a { color: var(--accent); }
+.leaflet-container { font: inherit; }
+.me { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; box-shadow: 0 0 0 2px var(--accent); }
+footer { font-size: 11px; color: var(--muted); padding: 6px 12px calc(6px + var(--safe-b)); border-top: 1px solid var(--line); background: var(--panel); }
+footer a { color: inherit; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="row" id="when" role="group" aria-label="Quand">
+    <button class="chip" data-when="today" aria-pressed="true">Ce soir</button>
+    <button class="chip" data-when="tomorrow" aria-pressed="false">Demain</button>
+    <button class="chip" data-when="weekend" aria-pressed="false">Week-end</button>
+    <button class="chip" data-when="week" aria-pressed="false">7 jours</button>
+  </div>
+  <div class="row">
+    <button class="chip" id="geo" title="Me localiser">📍 Autour de moi</button>
+    <select class="chip" id="radius" aria-label="Distance">
+      <option value="2">2 km</option><option value="5" selected>5 km</option>
+      <option value="10">10 km</option><option value="20">20 km</option>
+    </select>
+    <select class="chip" id="price" aria-label="Prix">
+      <option value="">Gratuit ou payant</option><option value="free">Gratuit</option><option value="paid">Payant</option>
+    </select>
+    <select class="chip" id="category" aria-label="Catégorie"><option value="">Toutes catégories</option></select>
+  </div>
+  <div class="status" id="status">Chargement…</div>
+</header>
+
+<main>
+  <div id="map" role="region" aria-label="Carte des événements"></div>
+  <div id="list" role="list"></div>
+</main>
+
+<footer>Sources : <a href="https://opendata.paris.fr/explore/dataset/que-faire-a-paris-/" rel="noopener">Que faire à Paris — Ville de Paris (ODbL)</a> · flux iCal des communes et salles. Cartes © <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a>.</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+(() => {
+  const CATEGORY_LABELS = {
+    music: "Musique", theatre: "Spectacle", cinema: "Cinéma", expo: "Expo", kids: "Enfants",
+    workshop: "Atelier", talk: "Rencontre", sport: "Sport", market: "Marché / festival", other: "Autre",
+  };
+  // Nanterre par défaut : le centre est remplacé par la géoloc si l'utilisateur
+  // l'accepte. Rien n'est jamais stocké : ni position, ni préférence.
+  const state = { lat: 48.892, lon: 2.207, when: "today", radius: 5, price: "", category: "", located: false };
+
+  const $ = (s) => document.querySelector(s);
+  const list = $("#list"), status = $("#status");
+
+  const map = L.map("map", { zoomControl: false }).setView([state.lat, state.lon], 13);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, attribution: "© OpenStreetMap",
+  }).addTo(map);
+  L.control.zoom({ position: "bottomright" }).addTo(map);
+  const markers = L.layerGroup().addTo(map);
+  let me = null, circle = null;
+
+  function drawCenter() {
+    if (me) me.remove();
+    if (circle) circle.remove();
+    me = L.marker([state.lat, state.lon], { icon: L.divIcon({ className: "me", iconSize: [14, 14] }), interactive: false }).addTo(map);
+    circle = L.circle([state.lat, state.lon], { radius: state.radius * 1000, color: "#4f9cf9", weight: 1, fillOpacity: 0.05, interactive: false }).addTo(map);
+  }
+
+  const fmtTime = (iso) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
+  const fmtDay = (iso) => new Date(iso).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", timeZone: "Europe/Paris" });
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const priceLabel = { free: "Gratuit", paid: "Payant", free_conditional: "Gratuit*", unknown: "" };
+
+  function render(data) {
+    markers.clearLayers();
+    list.innerHTML = "";
+    const evs = data.events;
+    if (!evs.length) {
+      list.innerHTML = `<div class="empty"><b>Rien dans ce rayon</b>Élargis la distance ou regarde demain.</div>`;
+      status.innerHTML = `<strong>0</strong> événement`;
+      return;
+    }
+    status.innerHTML = `<strong>${evs.length}</strong> événement${evs.length > 1 ? "s" : ""} à moins de ${state.radius} km`;
+    const bounds = [];
+    evs.forEach((e, i) => {
+      const card = document.createElement("a");
+      card.className = "ev"; card.role = "listitem"; card.href = e.url || "#"; card.target = "_blank"; card.rel = "noopener";
+      card.innerHTML = `
+        <div class="when"><b>${fmtTime(e.start)}</b><small>${state.when === "today" ? "" : fmtDay(e.start)}</small></div>
+        <div>
+          <h3>${esc(e.title)}</h3>
+          <div class="meta">
+            <span>${esc(e.venue || e.city || "")}</span>
+            <span>${e.distance_km} km</span>
+            <span class="price ${e.price_type}">${priceLabel[e.price_type] || ""}</span>
+            <span>${CATEGORY_LABELS[e.category] || ""}</span>
+          </div>
+        </div>`;
+      const m = L.circleMarker([e.lat, e.lon], { radius: 7, color: e.price_type === "free" ? "#3dd68c" : "#f5a54a", weight: 2, fillOpacity: .85 })
+        .bindPopup(`<b>${esc(e.title)}</b><br>${fmtTime(e.start)} · ${esc(e.venue || "")}<br>${e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener">Voir la page</a>` : ""}`);
+      m.on("click", () => { document.querySelectorAll(".ev.active").forEach((x) => x.classList.remove("active")); card.classList.add("active"); card.scrollIntoView({ block: "nearest", behavior: "smooth" }); });
+      card.addEventListener("mouseenter", () => m.openPopup());
+      markers.addLayer(m); list.appendChild(card); bounds.push([e.lat, e.lon]);
+    });
+    if (bounds.length) map.fitBounds(bounds.concat([[state.lat, state.lon]]), { padding: [30, 30], maxZoom: 15 });
+  }
+
+  let ctrl = null;
+  async function load() {
+    if (ctrl) ctrl.abort();
+    ctrl = new AbortController();
+    status.textContent = "Chargement…";
+    const q = new URLSearchParams({ lat: state.lat, lon: state.lon, radius: state.radius, when: state.when });
+    if (state.price) q.set("price", state.price);
+    if (state.category) q.set("category", state.category);
+    try {
+      const r = await fetch(`/api/events?${q}`, { signal: ctrl.signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      render(await r.json());
+      drawCenter();
+    } catch (err) {
+      if (err.name !== "AbortError") status.textContent = "Impossible de charger les événements.";
+    }
+  }
+
+  $("#when").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-when]"); if (!b) return;
+    document.querySelectorAll("[data-when]").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    state.when = b.dataset.when; load();
+  });
+  $("#radius").addEventListener("change", (e) => { state.radius = +e.target.value; load(); });
+  $("#price").addEventListener("change", (e) => { state.price = e.target.value; load(); });
+  $("#category").addEventListener("change", (e) => { state.category = e.target.value; load(); });
+
+  // Géoloc : API navigateur, consentement explicite au clic, jamais persistée.
+  $("#geo").addEventListener("click", () => {
+    if (!navigator.geolocation) return;
+    status.textContent = "Localisation…";
+    navigator.geolocation.getCurrentPosition(
+      (p) => { state.lat = p.coords.latitude; state.lon = p.coords.longitude; state.located = true; $("#geo").setAttribute("aria-pressed", "true"); map.setView([state.lat, state.lon], 14); load(); },
+      () => { status.textContent = "Localisation refusée — position par défaut conservée."; },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 },
+    );
+  });
+
+  // Déplacer la carte redéfinit le centre de recherche (avec un délai pour
+  // ne pas mitrailler l'API pendant un glissement).
+  let moveTimer = null;
+  map.on("moveend", () => {
+    if (map._justFit) { map._justFit = false; return; }
+    clearTimeout(moveTimer);
+    moveTimer = setTimeout(() => { const c = map.getCenter(); state.lat = c.lat; state.lon = c.lng; load(); }, 500);
+  });
+  const origFit = map.fitBounds.bind(map);
+  map.fitBounds = (...a) => { map._justFit = true; return origFit(...a); };
+
+  fetch("/api/categories").then((r) => r.json()).then(({ categories }) => {
+    const sel = $("#category");
+    categories.forEach((c) => { const o = document.createElement("option"); o.value = c; o.textContent = CATEGORY_LABELS[c] || c; sel.appendChild(o); });
+  }).catch(() => {});
+
+  load();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,190 @@
+# Annuaire des sources de la couche 2 (flux municipaux, salles, lieux associatifs).
+#
+# C'EST L'ACTIF DU PROJET : le code se réécrit, cet inventaire non. Chaque
+# entrée porte ce qui a été constaté et quand, pour qu'on sache dans six mois
+# si un domaine vaut le coup d'être resondé.
+#
+# Champs :
+#   url       : ce que le connecteur charge (ou le domaine sondé si rien trouvé)
+#   type      : ics | rss | jsonld | openagenda | llm | none
+#   enabled   : false = ignoré par la boucle de refresh
+#   license   : licence constatée, ou unknown (à vérifier avant publication)
+#   status    : ok | empty | no-feed | dns-error | cert-expired | needs-key
+#   checked   : date du dernier sondage
+#   note      : ce qu'il faut savoir pour la prochaine personne
+#
+# Sondage effectué par `python discover.py <domaines>` le 2026-08-23, complété
+# à la main pour les chemins propres à TYPO3/Drupal et les RSS WordPress.
+
+feeds:
+
+  # ------------------------------------------------------------- Montreuil
+
+  - url: https://lamarbrerie.fr/feed/
+    name: La Marbrerie
+    city: Montreuil
+    type: rss
+    enabled: false
+    license: unknown
+    status: ok
+    checked: 2026-08-23
+    note: >
+      RSS WordPress, 30 items catégorie « Agenda ». Les dates sont des
+      pubDate (publication), pas des dates d'événement : il faudra parser
+      la date dans le titre ou la page. Dernier item 30/07 — site entre deux
+      saisons au moment du sondage. Pas de .ics malgré WordPress
+      (The Events Calendar non installé : /events/?ical=1 → 404).
+
+  - url: https://www.instantschavires.com/feed/
+    name: Les Instants Chavirés
+    city: Montreuil
+    type: rss
+    enabled: false
+    license: unknown
+    status: ok
+    checked: 2026-08-23
+    note: >
+      RSS WordPress, 10 items, catégories CONCERTS/MUSIQUE/EXPOSITIONS
+      exploitables pour category. Même limite : pubDate ≠ date de l'event.
+      Candidat prioritaire pour un parser RSS dédié.
+
+  - url: https://www.montreuil.fr/agenda
+    name: Ville de Montreuil
+    city: Montreuil
+    type: none
+    enabled: false
+    license: unknown
+    status: no-feed
+    checked: 2026-08-23
+    note: >
+      Drupal. JSON-LD présent mais uniquement WebPage/BreadcrumbList, aucun
+      Event. Ni .ics ni RSS sur /agenda. Candidat scrape LLM ou demande
+      directe à la DSI de la ville (un export iCal est trivial côté Drupal).
+
+  - url: https://openagenda.com/fr/montreuil
+    name: Sortir & bouger à Montreuil (OpenAgenda)
+    city: Montreuil
+    type: openagenda
+    enabled: false
+    license: unknown
+    status: needs-key
+    checked: 2026-08-23
+    note: >
+      Agenda OpenAgenda uid 14898606. 1 seul événement visible au sondage.
+      L'API exige une clé (403 sans) : activer avec OPENAGENDA_KEY et
+      url: https://api.openagenda.com/v2/agendas/14898606 si le volume
+      le justifie un jour.
+
+  - url: https://meliesmontreuil.fr/
+    name: Cinéma Le Méliès
+    city: Montreuil
+    type: none
+    enabled: false
+    license: unknown
+    status: no-feed
+    checked: 2026-08-23
+    note: CMS propriétaire, pas de flux. Séances = candidat scrape.
+
+  - url: https://lechinois.com/
+    name: Le Chinois
+    city: Montreuil
+    type: none
+    enabled: false
+    license: unknown
+    status: no-feed
+    checked: 2026-08-23
+    note: Pas de flux ni de JSON-LD.
+
+  # -------------------------------------------------------------- Nanterre
+
+  - url: https://www.nanterre.fr/agenda
+    name: Ville de Nanterre
+    city: Nanterre
+    type: none
+    enabled: false
+    license: unknown
+    status: no-feed
+    checked: 2026-08-23
+    note: >
+      TYPO3. Aucun JSON-LD, pas de .ics ni RSS (/agenda?format=ics renvoie
+      du HTML). C'est LA source manquante pour le sommet Nanterre du
+      triangle — QFAP y a 0 event. Priorité n°1 pour un scrape LLM ou une
+      demande d'export à la ville.
+
+  - url: https://www.maisondelamusique.eu/saison/
+    name: Maison de la Musique
+    city: Nanterre
+    type: none
+    enabled: false
+    license: unknown
+    status: no-feed
+    checked: 2026-08-23
+    note: >
+      WordPress mais le RSS ne contient qu'un « Hello world! » de 2025 :
+      le site n'utilise pas les articles. Programmation sur /saison/ en
+      HTML pur → candidat scrape.
+
+  - url: https://nanterre-amandiers.com/
+    name: Théâtre Nanterre-Amandiers
+    city: Nanterre
+    type: none
+    enabled: false
+    license: unknown
+    status: no-feed
+    checked: 2026-08-23
+    note: >
+      Le brief indiquait theatre-nanterre-amandiers.fr : ce domaine
+      n'existe plus (NXDOMAIN). Le bon est nanterre-amandiers.com.
+      WordPress sans flux (/feed/ → 404).
+
+  - url: https://nanterre-lagora.fr/
+    name: L'Agora Nanterre
+    city: Nanterre
+    type: none
+    enabled: false
+    license: unknown
+    status: dns-error
+    checked: 2026-08-23
+    note: NXDOMAIN. Domaine à retrouver (lagora-nanterre.fr ne résout pas non plus).
+
+  # ------------------------------------------------------- départements
+
+  - url: https://www.est-ensemble.fr/
+    name: Est Ensemble
+    city: Seine-Saint-Denis
+    type: none
+    enabled: false
+    license: unknown
+    status: no-feed
+    checked: 2026-08-23
+    note: Le brief disait est-ensemble.fr (NXDOMAIN) ; www. fonctionne. Pas de flux.
+
+  - url: https://seine-saint-denis.fr/
+    name: Département 93
+    city: Seine-Saint-Denis
+    type: none
+    enabled: false
+    license: unknown
+    status: no-feed
+    checked: 2026-08-23
+    note: Redirige vers /shield (anti-bot). Ne pas insister.
+
+  - url: https://www.hauts-de-seine.fr/
+    name: Département 92
+    city: Hauts-de-Seine
+    type: none
+    enabled: false
+    license: unknown
+    status: no-feed
+    checked: 2026-08-23
+    note: TYPO3, pas de flux. Les événements « Vallée de la culture » sont en HTML.
+
+  - url: https://vallee-culture.hauts-de-seine.fr/
+    name: Vallée de la culture 92
+    city: Hauts-de-Seine
+    type: none
+    enabled: false
+    license: unknown
+    status: cert-expired
+    checked: 2026-08-23
+    note: Certificat TLS expiré au sondage. Resonder plus tard.
