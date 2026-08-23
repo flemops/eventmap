@@ -202,7 +202,7 @@ def _window(when: str, now: datetime) -> tuple[datetime, datetime]:
 def api_events(
     lat: float = Query(DEFAULT_LAT, ge=-90, le=90),
     lon: float = Query(DEFAULT_LON, ge=-180, le=180),
-    radius: float = Query(5.0, gt=0, le=MAX_RADIUS_KM, description="km"),
+    radius: float = Query(2.0, gt=0, le=MAX_RADIUS_KM, description="km"),
     when: str = Query("today", pattern="^(today|tomorrow|weekend|week)$"),
     price: str | None = Query(None, pattern="^(free|paid|free_conditional)$"),
     category: str | None = Query(None, max_length=20),

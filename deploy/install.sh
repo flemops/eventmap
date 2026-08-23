@@ -23,6 +23,10 @@ cd "$APP_DIR"
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q -r requirements.txt
 
+# Le dépôt appartient à $APP_USER mais git tourne en root : sans cette ligne,
+# tout `git fetch` ultérieur échoue sur "dubious ownership".
+git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
+
 echo "==> Dossier de données (seul chemin inscriptible pour le service)"
 mkdir -p "$APP_DIR/data"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
