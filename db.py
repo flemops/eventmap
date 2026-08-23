@@ -205,10 +205,15 @@ def search(
     # Un événement est pertinent s'il *chevauche* la fenêtre, pas seulement
     # s'il y commence : une expo ouverte de 10h à 19h doit sortir pour
     # « ce soir » à 17h. Sans `end`, on suppose 3 h de durée.
+    #
+    # Piège SQLite : `datetime()` renvoie "YYYY-MM-DD HH:MM:SS" (espace, sans
+    # fuseau) alors que nos colonnes sont en ISO "…T…+00:00". Comparer les
+    # deux formats bruts donne un ordre lexicographique faux. On passe tout
+    # par julianday() pour comparer des nombres, pas des chaînes.
     clauses = [
         "lat IS NOT NULL",
-        "COALESCE(end, datetime(start, '+3 hours')) > :start_from",
-        "start < :start_to",
+        "julianday(COALESCE(end, start)) + (CASE WHEN end IS NULL THEN 0.125 ELSE 0 END) > julianday(:start_from)",
+        "julianday(start) < julianday(:start_to)",
         "haversine_km(lat, lon, :lat, :lon) <= :radius",
     ]
     params: dict = {
@@ -231,7 +236,7 @@ def search(
                haversine_km(lat, lon, :lat, :lon) AS distance_km
         FROM events
         WHERE {' AND '.join(clauses)}
-        ORDER BY MAX(start, :start_from), distance_km
+        ORDER BY MAX(julianday(start), julianday(:start_from)), distance_km
         LIMIT :limit
         """,
         params,

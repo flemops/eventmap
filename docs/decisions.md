@@ -194,7 +194,34 @@ EventMap est tué par le cgroup et redémarre ; le portfolio ne voit rien.
 
 ---
 
+## D13 — Périmètre recentré sur Paris intra-muros
+
+**Contexte.** Le brief visait le triangle Nanterre–Paris–Montreuil. Deux
+constats mesurés le 23/08 : Que faire à Paris a 0 event à Nanterre et 14 à
+Montreuil ; et le sondage de 13 domaines de banlieue n'a produit aucun flux
+exploitable (ni .ics, ni JSON-LD `Event`, trois domaines disparus). Couvrir
+la banlieue aurait exigé soit du scrape LLM coûteux et fragile, soit des
+accords avec les villes — hors de proportion pour le bénéfice.
+
+**Décision.** Paris intra-muros uniquement. Filtre `address_city="Paris"`
+côté API Opendatasoft, centre par défaut Châtelet, rayon plafonné à 8 km.
+`feeds.yaml` vidé mais conservé avec les pistes. L'architecture multi-sources
+reste en place : rien n'est supprimé, tout est désactivé.
+
+**Conséquence.** Le produit tient sa promesse dès le premier jour : ~2 500
+events géolocalisés, à jour quotidiennement, sur une seule source fiable et
+sous licence claire. Le coût est d'abandonner l'« avantage compétitif » de
+l'annuaire de flux municipaux — qui, dans les faits, n'avait rien à
+annuaire. Un élargissement futur se fera source par source, en ajoutant des
+entrées à `feeds.yaml`, sans toucher au code.
+
+---
+
 ## Backlog — hors périmètre, consigné pour ne pas l'oublier
+
+- **Élargissement hors Paris** : voir D13 et `docs/sources.md` § sondage
+  banlieue. Deux RSS WordPress exploitables à Montreuil (Marbrerie, Instants
+  Chavirés) si un parser dédié est écrit.
 
 - **Contrainte transport** (fiche Notion) : « rentrer avant le dernier train ».
   Navitia `/journeys?datetime_represents=arrival` depuis le lieu vers le

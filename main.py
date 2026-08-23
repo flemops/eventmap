@@ -38,9 +38,11 @@ FEEDS_FILE = Path(os.environ.get("EVENTMAP_FEEDS", BASE_DIR / "feeds.yaml"))
 REFRESH_INTERVAL = int(os.environ.get("EVENTMAP_REFRESH_SECONDS", str(6 * 3600)))
 TZ = ZoneInfo("Europe/Paris")
 
-# Nanterre, domicile : centre par défaut quand le front n'envoie pas de position.
-DEFAULT_LAT, DEFAULT_LON = 48.892, 2.207
-MAX_RADIUS_KM = 30.0
+# Périmètre : Paris intra-muros. Centre par défaut = Châtelet, et le rayon
+# maximal couvre tout Paris depuis le centre (~6 km jusqu'au périphérique)
+# sans déborder inutilement sur la petite couronne.
+DEFAULT_LAT, DEFAULT_LON = 48.8584, 2.3470
+MAX_RADIUS_KM = 8.0
 
 # État partagé du refresh, exposé par /health. Pas de verrou : une seule
 # tâche écrit, et les lectures concurrentes d'un dict sont sûres en CPython.

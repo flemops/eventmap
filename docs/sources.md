@@ -1,5 +1,12 @@
 # Sources de données
 
+> **Périmètre depuis le 23/08/2026 : Paris intra-muros, source unique = Que
+> faire à Paris** (décision D13). Le connecteur filtre `address_city="Paris"`
+> côté API : 2534 events à venir au moment du recentrage. Les sections 2 à 5
+> décrivent des connecteurs écrits et testés mais **inactifs** ; la section
+> « Sondage banlieue » archive ce qui a été constaté sur les domaines du brief
+> initial, pour ne pas refaire le travail si le périmètre s'élargit.
+
 Ce document fait foi pour chaque source branchée dans l'agrégateur : ce qui a
 été **vérifié concrètement** (et quand), sous quelle licence, avec quelles
 limites, et comment les champs sont projetés dans le schéma interne.
@@ -209,3 +216,31 @@ Les noms de champs ci-dessus sont ceux observés sur **Explore API v2.1** le
 22/08/2026. Opendatasoft a déjà renommé des champs entre versions ; le
 connecteur lève une erreur explicite si un champ obligatoire (`id`, `title`,
 `occurrences`) manque, plutôt que d'ingérer silencieusement des lignes vides.
+
+---
+
+## Sondage banlieue — archive du 23/08/2026 (hors périmètre)
+
+Treize domaines du brief initial (Nanterre, Montreuil, 92, 93) sondés avec
+`discover.py` puis à la main. **Résultat : aucun flux structuré exploitable.**
+
+| Domaine | Constat |
+|---|---|
+| `montreuil.fr` | Drupal. JSON-LD présent mais seulement `WebPage`/`BreadcrumbList`, aucun `Event`. Ni .ics ni RSS sur `/agenda`. |
+| `lamarbrerie.fr` | WordPress. **RSS `/feed/` exploitable** : 30 items catégorie « Agenda ». Mais `pubDate` = date de publication, pas de l'event. `/events/?ical=1` → 404 (The Events Calendar absent). |
+| `instantschavires.com` | WordPress. **RSS `/feed/` exploitable** : catégories CONCERTS/MUSIQUE/EXPOSITIONS. Même limite sur `pubDate`. |
+| `maisondelamusique.eu` | WordPress, mais le RSS ne contient qu'un « Hello world! » de 2025. Programmation en HTML pur sur `/saison/`. |
+| `meliesmontreuil.fr` | CMS propriétaire, rien. |
+| `lechinois.com` | Rien. |
+| `nanterre.fr` | TYPO3. Aucun JSON-LD, pas de .ics ni RSS (`/agenda?format=ics` renvoie du HTML). |
+| `theatre-nanterre-amandiers.fr` | **NXDOMAIN.** Le vrai domaine est `nanterre-amandiers.com` (WordPress, `/feed/` → 404). |
+| `nanterre-lagora.fr` | **NXDOMAIN.** `lagora-nanterre.fr` non plus. |
+| `est-ensemble.fr` | **NXDOMAIN** sans `www.` ; `www.est-ensemble.fr` répond mais sans flux. |
+| `seine-saint-denis.fr` | Redirige vers `/shield` (anti-bot). |
+| `hauts-de-seine.fr` | TYPO3, pas de flux. |
+| `vallee-culture.hauts-de-seine.fr` | **Certificat TLS expiré** au sondage. |
+| OpenAgenda | Un agenda « Sortir & bouger à Montreuil » (uid 14898606), 1 event, API avec clé uniquement. |
+
+Deux pistes si le périmètre s'élargit un jour : un parser RSS dédié pour
+La Marbrerie et Les Instants Chavirés (extraire la date de l'event du titre
+ou de la page), et une demande d'export iCal à la DSI de Nanterre.

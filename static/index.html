@@ -89,8 +89,8 @@ footer a { color: inherit; }
   <div class="row">
     <button class="chip" id="geo" title="Me localiser">📍 Autour de moi</button>
     <select class="chip" id="radius" aria-label="Distance">
-      <option value="2">2 km</option><option value="5" selected>5 km</option>
-      <option value="10">10 km</option><option value="20">20 km</option>
+      <option value="1">1 km</option><option value="2" selected>2 km</option>
+      <option value="4">4 km</option><option value="8">Tout Paris</option>
     </select>
     <select class="chip" id="price" aria-label="Prix">
       <option value="">Gratuit ou payant</option><option value="free">Gratuit</option><option value="paid">Payant</option>
@@ -114,9 +114,9 @@ footer a { color: inherit; }
     music: "Musique", theatre: "Spectacle", cinema: "Cinéma", expo: "Expo", kids: "Enfants",
     workshop: "Atelier", talk: "Rencontre", sport: "Sport", market: "Marché / festival", other: "Autre",
   };
-  // Nanterre par défaut : le centre est remplacé par la géoloc si l'utilisateur
+  // Châtelet par défaut : le centre est remplacé par la géoloc si l'utilisateur
   // l'accepte. Rien n'est jamais stocké : ni position, ni préférence.
-  const state = { lat: 48.892, lon: 2.207, when: "today", radius: 5, price: "", category: "", located: false };
+  const state = { lat: 48.8584, lon: 2.3470, when: "today", radius: 2, price: "", category: "", located: false };
 
   const $ = (s) => document.querySelector(s);
   const list = $("#list"), status = $("#status");
