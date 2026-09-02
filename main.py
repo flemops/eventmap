@@ -286,6 +286,11 @@ async def api_refresh():
 
 @app.get("/")
 def index():
+    return FileResponse(STATIC_DIR / "accueil.html")
+
+
+@app.get("/carte")
+def carte():
     return FileResponse(STATIC_DIR / "index.html")
 
 
