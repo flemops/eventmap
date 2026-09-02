@@ -43,6 +43,14 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_start ON events (start);
 CREATE INDEX IF NOT EXISTS idx_events_geo   ON events (lat, lon);
 
+CREATE TABLE IF NOT EXISTS source_health (
+    source        TEXT PRIMARY KEY,
+    last_count    INTEGER NOT NULL DEFAULT 0,
+    last_nonempty TEXT,                     -- dernier cycle ayant rapporte >=1
+    empty_streak  INTEGER NOT NULL DEFAULT 0,
+    updated_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS feeds (
     url           TEXT PRIMARY KEY,
     name          TEXT,
@@ -250,6 +258,53 @@ def search(
         LIMIT :limit
         """,
         params,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+SOURCE_SILENT_DAYS = int(os.environ.get("EVENTMAP_SOURCE_SILENT_DAYS", "3"))
+
+
+def record_source_health(con: sqlite3.Connection, source: str, count: int,
+                         now: datetime) -> None:
+    """Trace ce qu'une source a rapporte, meme quand elle rapporte zero.
+
+    C'est la seule trace du mode de panne le plus dangereux : un parseur HTML
+    qui casse apres une refonte de site ne leve aucune erreur, il renvoie une
+    liste vide. `last_ok` reste vert, le journal reste muet.
+    """
+    iso = _iso(_to_utc(now))
+    con.execute(
+        """
+        INSERT INTO source_health (source, last_count, last_nonempty, empty_streak, updated_at)
+        VALUES (:s, :c, CASE WHEN :c > 0 THEN :t END, CASE WHEN :c > 0 THEN 0 ELSE 1 END, :t)
+        ON CONFLICT(source) DO UPDATE SET
+            last_count    = :c,
+            last_nonempty = CASE WHEN :c > 0 THEN :t ELSE last_nonempty END,
+            empty_streak  = CASE WHEN :c > 0 THEN 0 ELSE empty_streak + 1 END,
+            updated_at    = :t
+        """,
+        {"s": source, "c": count, "t": iso},
+    )
+
+
+def silent_sources(con: sqlite3.Connection, days: int = SOURCE_SILENT_DAYS) -> list[dict]:
+    """Sources muettes depuis trop longtemps, avec leur anciennete en jours.
+
+    `last_nonempty IS NULL` est inclus : une source qui n'a JAMAIS rien
+    rapporte est le cas le plus suspect, pas le moins.
+    """
+    rows = con.execute(
+        """
+        SELECT source, last_count, last_nonempty, empty_streak,
+               CAST(julianday('now') - julianday(COALESCE(last_nonempty, updated_at)) AS INT) AS silent_days
+        FROM source_health
+        WHERE empty_streak > 0
+          AND (last_nonempty IS NULL
+               OR julianday('now') - julianday(last_nonempty) >= :d)
+        ORDER BY silent_days DESC
+        """,
+        {"d": days},
     ).fetchall()
     return [dict(r) for r in rows]
 

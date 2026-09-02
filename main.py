@@ -115,10 +115,18 @@ async def refresh() -> list[sources.SourceResult]:
                         if is_feed:
                             db.mark_feed(con, r.name, ok=True,
                                          etag=meta.get("etag"), last_modified=meta.get("last_modified"))
+                        db.record_source_health(con, r.name, len(r.events), started)
                         # Un 304 ne renvoie rien : on ne purge surtout pas.
-                        if not meta.get("not_modified"):
+                        # Une source qui reussit mais renvoie ZERO non plus :
+                        # `purge_stale` effacerait tout son contenu, et c'est
+                        # exactement ce que fait un parseur casse en silence.
+                        # On garde l'ancien contenu, quitte a le voir vieillir.
+                        if not meta.get("not_modified") and r.events:
                             src = r.name if r.name == "qfap" else f"ics:{r.name}"
                             db.purge_stale(con, src, started)
+                        elif not r.events:
+                            log.warning("source %s : 0 evenement alors qu'elle "
+                                        "repond OK — purge annulee", r.name)
                     elif is_feed:
                         disabled = db.mark_feed(con, r.name, ok=False, error=r.error)
                         if disabled:
@@ -256,9 +264,12 @@ def health():
     with db.session() as con:
         s = db.stats(con)
         feeds = db.list_feeds(con, enabled_only=False)
-    degraded = any(not r["ok"] for r in _refresh_state["last_results"])
+    with db.session() as con:
+        silent = db.silent_sources(con)
+    degraded = any(not r["ok"] for r in _refresh_state["last_results"]) or bool(silent)
     body = {
         "status": "degraded" if degraded else "ok",
+        "silent_sources": silent,
         "db": s,
         "feeds": {"total": len(feeds), "enabled": sum(f["enabled"] for f in feeds)},
         "refresh": _refresh_state,
