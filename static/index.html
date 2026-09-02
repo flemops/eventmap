@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>Ce soir — EventMap</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
 <style>
 :root {
   --bg: #0f1216; --panel: #171b21; --line: #262c35; --text: #e8ecf1; --muted: #8a94a3;
@@ -93,7 +93,7 @@ footer a { color: inherit; }
       <option value="4">4 km</option><option value="8">Tout Paris</option>
     </select>
     <select class="chip" id="price" aria-label="Prix">
-      <option value="">Gratuit ou payant</option><option value="free">Gratuit</option><option value="paid">Payant</option>
+      <option value="free" selected>Gratuit</option><option value="">Gratuit ou payant</option><option value="paid">Payant</option>
     </select>
     <select class="chip" id="category" aria-label="Catégorie"><option value="">Toutes catégories</option></select>
   </div>
@@ -107,7 +107,7 @@ footer a { color: inherit; }
 
 <footer>Sources : <a href="https://opendata.paris.fr/explore/dataset/que-faire-a-paris-/" rel="noopener">Que faire à Paris — Ville de Paris (ODbL)</a> · flux iCal des communes et salles. Cartes © <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a>.</footer>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="/static/vendor/leaflet/leaflet.js"></script>
 <script>
 (() => {
   const CATEGORY_LABELS = {
@@ -116,7 +116,7 @@ footer a { color: inherit; }
   };
   // Châtelet par défaut : le centre est remplacé par la géoloc si l'utilisateur
   // l'accepte. Rien n'est jamais stocké : ni position, ni préférence.
-  const state = { lat: 48.8584, lon: 2.3470, when: "today", radius: 2, price: "", category: "", located: false };
+  const state = { lat: 48.8584, lon: 2.3470, when: "today", radius: 2, price: "free", category: "", located: false };
 
   const $ = (s) => document.querySelector(s);
   const list = $("#list"), status = $("#status");
