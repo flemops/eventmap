@@ -1,0 +1,109 @@
+# Culture d'origine — attribut du LIEU, jamais de l'événement.
+#
+# POURQUOI CE FICHIER EXISTE
+# Aucune source ne fournit de champ « culture » : sur 28 agrégateurs
+# d'événements parisiens analysés le 02/09/2026, zéro possède une facette par
+# culture d'origine. Ce qu'ils appellent catégories, ce sont des formats
+# (concert, expo) ou des genres musicaux.
+#
+# Le contournement : un lieu mono-culturel garantit la culture de tout ce qui
+# s'y passe. La Maison de la culture du Japon, c'est du Japon à 100 %. Le
+# problème de classification devient un fichier de configuration.
+#
+# CE QUE CE FICHIER N'EST PAS
+# Ce n'est pas un filtre d'entrée. La question posée à l'utilisateur reste
+# « ce soir, à 2 km, oui ou non » : la culture est la RÉPONSE, pas la porte.
+# Motif : le volume par culture est minuscule (3 événements réels au MCJP en
+# ce moment). Un produit dont on entre par la culture répondrait « non » six
+# semaines sur sept.
+#
+# RÈGLE D'ADMISSION D'UN LIEU
+# Un lieu n'entre ici que si TOUT ce qu'il programme relève de la culture
+# annoncée. Dans le doute, on n'inscrit pas.
+#   - Musée Guimet (66 créneaux) : REFUSÉ. Musée national des arts asiatiques,
+#     pan-asiatique. Le taguer « japon » serait faux.
+#   - Bibliothèque François-Mitterrand (55 créneaux japonais) : REFUSÉ. C'est
+#     une bibliothèque généraliste qui accueille une exposition japonaise ;
+#     dans six mois ce sera autre chose.
+#
+# LIMITE À CONNAÎTRE
+# Le classement par lieu ne capte que la version institutionnelle d'une
+# culture. Une fête tamoule à La Chapelle, un nouvel an lunaire dans le 13e,
+# une soirée afro en club : aucun n'est classable par lieu. Vérifié le
+# 02/09 : « tamoul » et « sri lankais » = 0 événement dans toute la base.
+
+lieux:
+  # --- CULTURE PILOTE : JAPON -------------------------------------------
+  - nom: "Maison de la culture du Japon à Paris"
+    culture: japon
+    fiche:
+      # Ces champs répondent à la question que personne ne pose : « est-ce que
+      # j'ai le droit d'y être, moi ? » Ils ne se déduisent d'aucun flux de
+      # données — c'est précisément ce qu'aucun agrégateur ne peut copier.
+      #
+      # ⚠️ LEÇON APPRISE À LA PREMIÈRE ÉCRITURE DE CE FICHIER
+      # Claude avait écrit « expositions payantes, tarif réduit courant ».
+      # C'était faux : les 21 créneaux du MCJP en base sont `price_type=free`.
+      # Une phrase plausible, écrite sans vérification, contredite par les
+      # données du site lui-même. C'est exactement le mode de panne du projet :
+      # une fiche fausse est pire que pas de fiche, parce qu'elle est crue.
+      #
+      # RÈGLE : ne rien écrire ici qui ne soit vérifié à la source. Les champs
+      # marqués « À VÉRIFIER » ne doivent PAS être affichés tant qu'ils n'ont
+      # pas été confirmés par Hamdy, sur place ou par téléphone.
+      entree: "La programmation actuellement en base est gratuite (21 créneaux, tous `free`). Le tarif varie selon les expositions — vérifier sur la fiche de l'événement."
+      reservation: "À VÉRIFIER — non confirmé."
+      langue: "À VÉRIFIER — non confirmé."
+      cadre: "Institution culturelle publique, laïque. Ce n'est ni un lieu de culte ni une fête communautaire."
+      tenue: "À VÉRIFIER — non confirmé."
+      photos: "À VÉRIFIER — non confirmé."
+      venir_seul: "À VÉRIFIER — non confirmé."
+      non_inities: "À VÉRIFIER — non confirmé."
+      pourquoi: |
+        BROUILLON — À RÉÉCRIRE PAR HAMDY, DE SA VOIX.
+
+        Fait vérifiable : la Maison de la culture du Japon à Paris est le
+        centre culturel de la Japan Foundation, institution publique
+        japonaise. Sa mission est de faire connaître le Japon à un public
+        français — c'est de la diplomatie culturelle, pas un lieu de vie
+        communautaire.
+
+        Ce qu'il reste à écrire, et que Claude ne doit pas inventer : ce que
+        ça change pour quelqu'un qui hésite à pousser la porte.
+      # Ce que le mécanisme ne dira jamais tout seul, et qu'il faut savoir :
+      # cette fiche vaut dix ans. Elle s'écrit une fois par LIEU, jamais par
+      # événement. C'est ce qui rend le coût éditorial tenable (quinze
+      # soirées) au lieu d'impossible (une fiche par événement).
+
+  # --- AUTRES LIEUX MONO-CULTURELS PRÉSENTS EN BASE ----------------------
+  # Le mécanisme fonctionne pour eux ; leurs fiches restent à écrire.
+  # Volumes constatés en base le 02/09/2026 (créneaux, pas événements).
+
+  - nom: "Institut suédois"          # 84 + 53 créneaux sous deux orthographes
+    culture: suede                   # « Institut Suédois » avec majuscule =
+    fiche: {}                        # le même lieu → appariement insensible
+                                     # à la casse, obligatoire.
+
+  - nom: "Centre culturel suisse Paris"   # 130 créneaux — le plus gros du lot
+    culture: suisse
+    fiche: {}
+
+  - nom: "Institut du Monde Arabe"        # 38 créneaux
+    culture: monde-arabe
+    fiche: {}
+
+  - nom: "Institut des Cultures d'Islam (ICI)"   # 48 créneaux
+    culture: cultures-islam
+    fiche: {}
+
+  - nom: "Centre culturel canadien à Paris"      # 4 créneaux
+    culture: canada
+    fiche: {}
+
+cultures:
+  japon:          { nom: "Japon" }
+  suede:          { nom: "Suède" }
+  suisse:         { nom: "Suisse" }
+  monde-arabe:    { nom: "Monde arabe" }
+  cultures-islam: { nom: "Cultures d'Islam" }
+  canada:         { nom: "Canada" }

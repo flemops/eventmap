@@ -197,6 +197,7 @@ def search(
     start_to: datetime,
     price_type: str | None = None,
     category: str | None = None,
+    venues: list[str] | None = None,
     limit: int = 200,
 ) -> list[dict]:
     """Événements dans le rayon et la fenêtre, triés par distance puis date."""
@@ -228,6 +229,15 @@ def search(
     if category:
         clauses.append("category = :category")
         params["category"] = category
+
+    if venues:
+        # Filtre par liste de lieux : c'est ainsi qu'on filtre par culture,
+        # celle-ci étant un attribut du lieu et non de l'événement.
+        # `lower()` obligatoire : la base contient « Institut suédois » et
+        # « Institut Suédois » pour le même lieu.
+        keys = [f"venue_{i}" for i in range(len(venues))]
+        clauses.append("lower(venue) IN (" + ", ".join(f":{k}" for k in keys) + ")")
+        params.update({k: v.lower() for k, v in zip(keys, venues)})
 
     rows = con.execute(
         f"""

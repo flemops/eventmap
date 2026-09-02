@@ -22,6 +22,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+import cultures
 import db
 import sources
 import sources_paris
@@ -206,20 +207,43 @@ def api_events(
     when: str = Query("today", pattern="^(today|tomorrow|weekend|week)$"),
     price: str | None = Query(None, pattern="^(free|paid|free_conditional)$"),
     category: str | None = Query(None, max_length=20),
+    culture: str | None = Query(None, max_length=40,
+        description="cle de culture (voir /api/cultures) : filtre sur les lieux mono-culturels"),
     limit: int = Query(100, ge=1, le=300),
 ):
     start, end = _window(when, datetime.now(timezone.utc))
+
+    venues = None
+    if culture:
+        venues = cultures.venues_for(culture)
+        if not venues:
+            raise HTTPException(404, f"culture inconnue ou sans lieu : {culture!r}")
+
     with db.session() as con:
         rows = db.search(con, lat=lat, lon=lon, radius_km=radius, start_from=start,
-                         start_to=end, price_type=price, category=category, limit=limit)
+                         start_to=end, price_type=price, category=category,
+                         venues=venues, limit=limit)
     for r in rows:
         r["distance_km"] = round(r["distance_km"], 2)
+        # La culture enrichit la reponse ; elle n'est jamais la porte d'entree.
+        # La question posee reste « ce soir, a 2 km, oui ou non ».
+        r["culture"] = cultures.for_venue(r.get("venue"))
     return {
         "count": len(rows),
         "window": {"from": start.isoformat(timespec="minutes"), "to": end.isoformat(timespec="minutes")},
         "center": {"lat": lat, "lon": lon, "radius_km": radius},
         "events": rows,
     }
+
+
+@app.get("/api/cultures")
+def api_cultures():
+    """Cultures declarees, avec le nombre de lieux mono-culturels de chacune.
+
+    Volontairement pauvre : ce n'est pas un menu de navigation. La culture est
+    un attribut du lieu, affiche en reponse — pas un filtre d'entree.
+    """
+    return {"cultures": cultures.all_cultures()}
 
 
 @app.get("/api/categories")
