@@ -8,12 +8,15 @@
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
 <style>
 :root {
-  --bg: #0f1216; --panel: #171b21; --line: #262c35; --text: #e8ecf1; --muted: #8a94a3;
-  --accent: #4f9cf9; --free: #3dd68c; --paid: #f5a54a;
+  --bg: #12131f; --panel: #1b1d2e; --chip-bg: #20223a; --line: #2b2e45; --text: #eef0fa; --muted: #8b8fae;
+  --accent: #ef3d6e; --accent-glow: rgba(239,61,110,.35); --free: #4fd694; --paid: #f0a93c;
   --radius: 12px; --safe-b: env(safe-area-inset-bottom, 0px);
 }
 @media (prefers-color-scheme: light) {
-  :root { --bg: #f6f7f9; --panel: #fff; --line: #e2e6ec; --text: #15181d; --muted: #5e6876; --accent: #1f6fd6; }
+  :root {
+    --bg: #f7f4ee; --panel: #fff; --chip-bg: #f0ece1; --line: #e6e0d2; --text: #1c1b22; --muted: #6b6577;
+    --accent: #c81155; --accent-glow: rgba(200,17,85,.2); --free: #1f8a5c; --paid: #a8650f;
+  }
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -21,6 +24,10 @@ body {
   background: var(--bg); color: var(--text);
   font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   display: flex; flex-direction: column; -webkit-font-smoothing: antialiased;
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }
 }
 
 /* ---- barre de filtres : compacte, tout au pouce --------------------- */
@@ -31,17 +38,17 @@ header {
 .row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .row::-webkit-scrollbar { display: none; }
 .chip {
-  flex: none; padding: 7px 13px; border-radius: 999px; border: 1px solid var(--line);
-  background: transparent; color: var(--text); font: inherit; font-size: 14px; cursor: pointer;
-  white-space: nowrap;
+  flex: none; padding: 7px 13px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--chip-bg); color: var(--text); font: inherit; font-size: 14px; cursor: pointer;
+  white-space: nowrap; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
-.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 0 0 4px var(--accent-glow); }
 .status { font-size: 13px; color: var(--muted); min-height: 1.2em; }
 .status strong { color: var(--text); }
 
 /* ---- carte + liste : empilés mobile, côte à côte desktop -------------- */
 main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-#map { flex: 0 0 38vh; min-height: 200px; background: #222; }
+#map { flex: 0 0 38vh; min-height: 200px; background: var(--panel); }
 #list { flex: 1; overflow-y: auto; padding: 10px 12px calc(16px + var(--safe-b)); display: grid; gap: 8px; align-content: start; }
 @media (min-width: 900px) {
   main { flex-direction: row; }
@@ -49,19 +56,25 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   #list { flex: 0 0 440px; border-left: 1px solid var(--line); }
 }
 
-/* ---- carte event ------------------------------------------------------ */
+/* ---- carte event : tuile "panneau d'affichage" -------------------------- */
 .ev {
   display: grid; grid-template-columns: 58px 1fr; gap: 10px; padding: 10px 12px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid transparent; border-radius: var(--radius);
   text-decoration: none; color: inherit; cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
 }
-.ev:hover, .ev.active { border-color: var(--accent); }
-.when { display: flex; flex-direction: column; align-items: center; justify-content: center; border-right: 1px solid var(--line); padding-right: 10px; }
-.when b { font-size: 18px; line-height: 1; }
-.when small { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.ev:hover, .ev.active { border-left-color: var(--accent); background: color-mix(in srgb, var(--panel) 92%, var(--accent) 8%); }
+.when {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: var(--chip-bg); border-radius: 8px; padding: 6px 2px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.when b { font-size: 16px; font-weight: 700; letter-spacing: .02em; line-height: 1; }
+.when small { color: var(--muted); font-size: 10px; margin-top: 3px; text-transform: uppercase; letter-spacing: .04em; }
 .ev h3 { margin: 0 0 3px; font-size: 15px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.meta { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; }
-.price { font-weight: 600; }
+.meta { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.price { font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
+.price::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
 .price.free { color: var(--free); }
 .price.paid { color: var(--paid); }
 .empty { text-align: center; color: var(--muted); padding: 40px 20px; }
@@ -133,7 +146,7 @@ footer a { color: inherit; }
     if (me) me.remove();
     if (circle) circle.remove();
     me = L.marker([state.lat, state.lon], { icon: L.divIcon({ className: "me", iconSize: [14, 14] }), interactive: false }).addTo(map);
-    circle = L.circle([state.lat, state.lon], { radius: state.radius * 1000, color: "#4f9cf9", weight: 1, fillOpacity: 0.05, interactive: false }).addTo(map);
+    circle = L.circle([state.lat, state.lon], { radius: state.radius * 1000, color: "#ef3d6e", weight: 1, fillOpacity: 0.05, interactive: false }).addTo(map);
   }
 
   const fmtTime = (iso) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
@@ -166,7 +179,7 @@ footer a { color: inherit; }
             <span>${CATEGORY_LABELS[e.category] || ""}</span>
           </div>
         </div>`;
-      const m = L.circleMarker([e.lat, e.lon], { radius: 7, color: e.price_type === "free" ? "#3dd68c" : "#f5a54a", weight: 2, fillOpacity: .85 })
+      const m = L.circleMarker([e.lat, e.lon], { radius: 7, color: e.price_type === "free" ? "#4fd694" : "#f0a93c", weight: 2, fillOpacity: .85 })
         .bindPopup(`<b>${esc(e.title)}</b><br>${fmtTime(e.start)} · ${esc(e.venue || "")}<br>${e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener">Voir la page</a>` : ""}`);
       m.on("click", () => { document.querySelectorAll(".ev.active").forEach((x) => x.classList.remove("active")); card.classList.add("active"); card.scrollIntoView({ block: "nearest", behavior: "smooth" }); });
       card.addEventListener("mouseenter", () => m.openPopup());
