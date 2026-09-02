@@ -141,7 +141,7 @@ footer a { color: inherit; }
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const priceLabel = { free: "Gratuit", paid: "Payant", free_conditional: "Gratuit*", unknown: "" };
 
-  function render(data) {
+  function render(data, fit) {
     markers.clearLayers();
     list.innerHTML = "";
     const evs = data.events;
@@ -172,11 +172,14 @@ footer a { color: inherit; }
       card.addEventListener("mouseenter", () => m.openPopup());
       markers.addLayer(m); list.appendChild(card); bounds.push([e.lat, e.lon]);
     });
-    if (bounds.length) map.fitBounds(bounds.concat([[state.lat, state.lon]]), { padding: [30, 30], maxZoom: 15 });
+    // Ne recadrer que sur une vraie nouvelle recherche (filtre change, geoloc,
+    // premier chargement) -- jamais apres un pan/zoom manuel de l'utilisateur,
+    // sinon son geste est efface des que les evenements se rechargent.
+    if (fit && bounds.length) map.fitBounds(bounds.concat([[state.lat, state.lon]]), { padding: [30, 30], maxZoom: 15 });
   }
 
   let ctrl = null;
-  async function load() {
+  async function load(fit = true) {
     if (ctrl) ctrl.abort();
     ctrl = new AbortController();
     status.textContent = "Chargement…";
@@ -186,7 +189,7 @@ footer a { color: inherit; }
     try {
       const r = await fetch(`/api/events?${q}`, { signal: ctrl.signal });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      render(await r.json());
+      render(await r.json(), fit);
       drawCenter();
     } catch (err) {
       if (err.name !== "AbortError") status.textContent = "Impossible de charger les événements.";
@@ -219,7 +222,8 @@ footer a { color: inherit; }
   map.on("moveend", () => {
     if (map._justFit) { map._justFit = false; return; }
     clearTimeout(moveTimer);
-    moveTimer = setTimeout(() => { const c = map.getCenter(); state.lat = c.lat; state.lon = c.lng; load(); }, 500);
+    // fit=false : l'utilisateur vient de choisir sa vue a la main, ne pas la lui reprendre.
+    moveTimer = setTimeout(() => { const c = map.getCenter(); state.lat = c.lat; state.lon = c.lng; load(false); }, 500);
   });
   const origFit = map.fitBounds.bind(map);
   map.fitBounds = (...a) => { map._justFit = true; return origFit(...a); };
