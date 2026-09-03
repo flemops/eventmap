@@ -47,7 +47,8 @@ MAX_RADIUS_KM = 8.0
 
 # État partagé du refresh, exposé par /health. Pas de verrou : une seule
 # tâche écrit, et les lectures concurrentes d'un dict sont sûres en CPython.
-_refresh_state: dict = {"running": False, "last_run": None, "last_results": [], "runs": 0}
+_refresh_state: dict = {"running": False, "last_run": None, "last_results": [], "runs": 0,
+                        "dedup": {"forte": 0, "faible": 0}}
 _refresh_lock = asyncio.Lock()
 
 
@@ -56,6 +57,7 @@ _refresh_lock = asyncio.Lock()
 def _build_fetchers(con) -> dict[str, sources.Fetcher]:
     """Assemble les connecteurs actifs : QFAP toujours, puis feeds.yaml."""
     fetchers: dict[str, sources.Fetcher] = {"qfap": sources_paris.fetch}
+    _geo_bboxes: dict[str, dict] = {}
 
     if FEEDS_FILE.exists():
         spec = yaml.safe_load(FEEDS_FILE.read_text(encoding="utf-8")) or {}
@@ -64,11 +66,14 @@ def _build_fetchers(con) -> dict[str, sources.Fetcher]:
                 continue
             db.upsert_feed(con, feed["url"], feed.get("type", "ics"),
                            name=feed.get("name"), city=feed.get("city"))
+            if feed.get("geo_bbox"):
+                _geo_bboxes[feed["url"]] = feed["geo_bbox"]
 
     for feed in db.list_feeds(con, enabled_only=True):
         url, kind = feed["url"], feed["kind"]
         if kind == "ics":
-            fetchers[url] = _ics_fetcher(url, feed.get("etag"), feed.get("last_modified"))
+            fetchers[url] = _ics_fetcher(url, feed.get("etag"), feed.get("last_modified"),
+                                         geo_bbox=_geo_bboxes.get(url))
         elif kind == "openagenda":
             uid = url.rsplit("/", 1)[-1]
             fetchers[url] = lambda c, _uid=uid: sources.fetch_openagenda(c, _uid)
@@ -77,10 +82,24 @@ def _build_fetchers(con) -> dict[str, sources.Fetcher]:
     return fetchers
 
 
-def _ics_fetcher(url: str, etag: str | None, last_modified: str | None) -> sources.Fetcher:
+def _ics_fetcher(url: str, etag: str | None, last_modified: str | None,
+                 geo_bbox: dict | None = None) -> sources.Fetcher:
     async def fetch(client: sources.PoliteClient) -> list[db.Event]:
         events, meta = await sources.fetch_ics(client, url, source=f"ics:{url}",
                                                etag=etag, last_modified=last_modified)
+        if geo_bbox:
+            # Un flux peut déborder de son périmètre déclaré (ex. FICEP :
+            # 149 VEVENT dont quelques-uns à Arles, Bruxelles, Lyon) — filtrer
+            # sur la boîte englobante plutôt que de faire confiance au flux.
+            before = len(events)
+            events = [
+                e for e in events
+                if e.lat is not None and e.lon is not None
+                and geo_bbox["lat_min"] <= e.lat <= geo_bbox["lat_max"]
+                and geo_bbox["lon_min"] <= e.lon <= geo_bbox["lon_max"]
+            ]
+            if before != len(events):
+                log.info("flux %s : %d évènement(s) hors zone géo écarté(s)", url, before - len(events))
         # On accroche les méta de cache à la liste pour que refresh() les
         # retrouve sans changer la signature commune des connecteurs.
         fetch.meta = meta  # type: ignore[attr-defined]
@@ -132,18 +151,24 @@ async def refresh() -> list[sources.SourceResult]:
                         if disabled:
                             log.warning("flux désactivé après échecs répétés: %s", r.name)
 
-                deduped = sources.dedupe(all_events)
-                n = db.upsert_events(con, deduped)
+                # Plus de fusion pré-upsert (D9) : toutes les sources sont
+                # écrites telles quelles, et dedup_inter_source() marque les
+                # doublons APRÈS coup, de façon réversible (doublon_de).
+                n = db.upsert_events(con, all_events)
+                dedup_counts = sources.dedup_inter_source(con, now=started)
                 purged = db.purge_past(con)
 
             ok = sum(1 for r in results if r.ok)
-            log.info("refresh terminé en %.1fs : %d/%d sources OK, %d créneaux, %d upserts, %d passés purgés",
-                     time.monotonic() - t0, ok, len(results), len(all_events), n, purged)
+            log.info("refresh terminé en %.1fs : %d/%d sources OK, %d créneaux, %d upserts, "
+                     "%d doublons forts + %d faibles marqués, %d passés purgés",
+                     time.monotonic() - t0, ok, len(results), len(all_events), n,
+                     dedup_counts["forte"], dedup_counts["faible"], purged)
             _refresh_state["last_results"] = [
                 {"source": r.name, "ok": r.ok, "events": len(r.events),
                  "duration_s": round(r.duration_s, 1), "error": r.error}
                 for r in results
             ]
+            _refresh_state["dedup"] = dedup_counts
             return results
         except Exception:
             # Dernier filet : un bug dans refresh() lui-même ne doit pas tuer
@@ -234,8 +259,10 @@ def api_events(
     for r in rows:
         r["distance_km"] = round(r["distance_km"], 2)
         # La culture enrichit la reponse ; elle n'est jamais la porte d'entree.
-        # La question posee reste « ce soir, a 2 km, oui ou non ».
-        r["culture"] = cultures.for_venue(r.get("venue"))
+        # La question posee reste « ce soir, a 2 km, oui ou non ». Titre et
+        # description passés pour l'option C : un évènement multi-pays perd
+        # l'attribut même si son lieu reste admis (cf. cultures.yaml).
+        r["culture"] = cultures.for_venue(r.get("venue"), r.get("title"), r.get("description"))
     return {
         "count": len(rows),
         "window": {"from": start.isoformat(timespec="minutes"), "to": end.isoformat(timespec="minutes")},
@@ -264,6 +291,7 @@ def health():
     with db.session() as con:
         s = db.stats(con)
         feeds = db.list_feeds(con, enabled_only=False)
+        excluded = cultures.excluded_count(con)
     with db.session() as con:
         silent = db.silent_sources(con)
     degraded = any(not r["ok"] for r in _refresh_state["last_results"]) or bool(silent)
@@ -272,6 +300,11 @@ def health():
         "silent_sources": silent,
         "db": s,
         "feeds": {"total": len(feeds), "enabled": sum(f["enabled"] for f in feeds)},
+        # Mesurable, sinon on ne sait jamais si l'option C (cultures.yaml)
+        # ou le dédoublonnage inter-sources (sources.dedup_inter_source)
+        # mordent trop — ou pas assez.
+        "cultures": {"excluded_events": excluded},
+        "dedup": _refresh_state["dedup"],
         "refresh": _refresh_state,
     }
     return JSONResponse(body, status_code=200)

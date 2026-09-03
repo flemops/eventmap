@@ -13,24 +13,52 @@
 # CE QUE CE FICHIER N'EST PAS
 # Ce n'est pas un filtre d'entrée. La question posée à l'utilisateur reste
 # « ce soir, à 2 km, oui ou non » : la culture est la RÉPONSE, pas la porte.
-# Motif : le volume par culture est minuscule (3 événements réels au MCJP en
-# ce moment). Un produit dont on entre par la culture répondrait « non » six
-# semaines sur sept.
+# Motif : le volume par culture est minuscule. Un produit dont on entre par
+# la culture répondrait « non » six semaines sur sept.
 #
-# RÈGLE D'ADMISSION D'UN LIEU
-# Un lieu n'entre ici que si TOUT ce qu'il programme relève de la culture
-# annoncée. Dans le doute, on n'inscrit pas.
-#   - Musée Guimet (66 créneaux) : REFUSÉ. Musée national des arts asiatiques,
-#     pan-asiatique. Le taguer « japon » serait faux.
-#   - Bibliothèque François-Mitterrand (55 créneaux japonais) : REFUSÉ. C'est
-#     une bibliothèque généraliste qui accueille une exposition japonaise ;
-#     dans six mois ce sera autre chose.
+# RÈGLE D'ADMISSION D'UN LIEU — RÉVISÉE LE 03/09/2026 (option C, décision de
+# Hamdy, voir mapping-ficep.md)
+# Version d'origine (02/09) : un lieu n'entrait que si TOUT ce qu'il
+# programme relève de la culture annoncée. Appliquée aux 10 lieux du flux
+# FICEP, cette règle en éliminait 6 sur 10 pour une minorité d'événements
+# multi-pays (ex. Goethe-Institut : festival de cinéma soudanais ; Institut
+# suédois, déjà en base, coproduit un ciné-club avec quatre autres pays —
+# la règle mordait donc déjà sur l'existant sans que personne l'ait vu).
+#
+# Nouvelle règle : un lieu entre s'il est *majoritairement* dédié à la
+# culture annoncée, plus une liste de mots-clés d'exclusion (`exclusions`
+# ci-dessous) qui retire les événements manifestement multi-pays d'un lieu
+# par ailleurs mono-culturel. Le libellé affiché doit refléter ce
+# compromis : "Lieux dédiés à la culture X", jamais "Culture X" — la facette
+# qualifie le LIEU, pas l'événement qu'elle affiche.
+# Contrepartie assumée : un faux positif occasionnel (une soirée cinéma
+# soudanais affichée sous "Allemagne") plutôt qu'un vrai négatif (un lieu
+# entier écarté pour une exception). Le nombre d'événements écartés par la
+# liste d'exclusion est exposé dans /health — sinon on ne saurait jamais si
+# la règle mord trop ou pas assez.
 #
 # LIMITE À CONNAÎTRE
 # Le classement par lieu ne capte que la version institutionnelle d'une
 # culture. Une fête tamoule à La Chapelle, un nouvel an lunaire dans le 13e,
 # une soirée afro en club : aucun n'est classable par lieu. Vérifié le
 # 02/09 : « tamoul » et « sri lankais » = 0 événement dans toute la base.
+
+# Mots-clés qui retirent l'attribut culture d'un événement d'un lieu
+# mono-culturel par ailleurs admis (marqueurs multi-pays repérés le 03/09
+# sur la programmation réelle des 10 lieux FICEP — voir mapping-ficep.md).
+# Comparaison insensible à la casse et aux accents (cultures.py::_norm_text).
+# Un événement est aussi écarté si son titre/description contient le nom
+# d'une AUTRE culture que celle du lieu (vérifié en code, pas listé ici).
+exclusions:
+  - "nordique"
+  - "scandinave"
+  - "francophone"
+  - "européen"
+  - "européenne"
+  - "EUNIC"
+  - "panafricain"
+  - "journée des langues"
+  - "nuit des idées"
 
 lieux:
   # --- CULTURE PILOTE : JAPON -------------------------------------------
@@ -51,59 +79,374 @@ lieux:
       # RÈGLE : ne rien écrire ici qui ne soit vérifié à la source. Les champs
       # marqués « À VÉRIFIER » ne doivent PAS être affichés tant qu'ils n'ont
       # pas été confirmés par Hamdy, sur place ou par téléphone.
-      entree: "La programmation actuellement en base est gratuite (21 créneaux, tous `free`). Le tarif varie selon les expositions — vérifier sur la fiche de l'événement."
-      reservation: "À VÉRIFIER — non confirmé."
-      langue: "À VÉRIFIER — non confirmé."
-      cadre: "Institution culturelle publique, laïque. Ce n'est ni un lieu de culte ni une fête communautaire."
-      tenue: "À VÉRIFIER — non confirmé."
-      photos: "À VÉRIFIER — non confirmé."
-      venir_seul: "À VÉRIFIER — non confirmé."
-      non_inities: "À VÉRIFIER — non confirmé."
-      pourquoi: |
-        BROUILLON — À RÉÉCRIRE PAR HAMDY, DE SA VOIX.
-
-        Fait vérifiable : la Maison de la culture du Japon à Paris est le
-        centre culturel de la Japan Foundation, institution publique
-        japonaise. Sa mission est de faire connaître le Japon à un public
-        français — c'est de la diplomatie culturelle, pas un lieu de vie
-        communautaire.
-
-        Ce qu'il reste à écrire, et que Claude ne doit pas inventer : ce que
-        ça change pour quelqu'un qui hésite à pousser la porte.
+      #
+      # Mise à jour du 03/09/2026 : entree/reservation/langue vérifiés sur
+      # imarabe... non — sur mcjp.fr (page horaires/billetterie), deux cas
+      # opposés relevés (Sumo en entrée libre au hall, Shunga payante et
+      # réservée aux +18 en salle niveau 2). horaires/acces/cadre ajoutés,
+      # sourcés sur le site officiel. tenue/photos/venir_seul/non_inities
+      # restent introuvables en ligne — appel nécessaire au 01 44 37 95 95.
+      entree: >-
+        Variable selon l'exposition, il n'y a pas de règle unique — vérifié sur deux
+        cas opposés : « Sumo, forces sacrées » (hall, rez-de-chaussée) en entrée
+        libre ; « Shunga » (salle d'exposition, niveau 2) à 7 €, 5 € réduit, gratuit
+        pour les adhérents, réservée aux plus de 18 ans.
+      reservation: >-
+        Dépend du format : la réservation ouvre 2 mois avant pour les spectacles
+        vivants, 30 jours avant pour les conférences, le cinéma, les ateliers et les
+        cours. Billetterie en ligne sans commission, ou à la caisse du mardi au
+        samedi 11h-18h30. Billets ni repris ni remboursés, sauf annulation.
+        Certains événements gratuits exigent quand même une réservation.
+      langue: >-
+        Annoncé fiche par fiche, pas de règle générale. Exemple vérifié : conférence
+        du 19/09/2026 « en français et en japonais avec traduction consécutive en
+        français ».
+      horaires: "Accueil mardi à samedi 11h-19h. Fermé dimanche, lundi et jours fériés."
+      acces: >-
+        Métro Bir-Hakeim (ligne 6), RER C Champ de Mars-Tour Eiffel, bus 30, 72, 82.
+        Les espaces sont accessibles aux personnes à mobilité réduite. Pas de parking
+        visiteurs.
+      cadre: >-
+        Représente la Fondation du Japon en France, en partenariat avec l'Association
+        pour la Maison de la culture du Japon à Paris, depuis 1997. Institution
+        culturelle publique et laïque : ni lieu de culte, ni fête communautaire.
+      tenue: "À VÉRIFIER — non publié. Demande un appel au 01 44 37 95 95."
+      photos: "À VÉRIFIER — non publié. Demande un appel au 01 44 37 95 95."
+      venir_seul: "À VÉRIFIER — non publié. Demande un appel au 01 44 37 95 95."
+      non_inities: "À VÉRIFIER — non publié. Demande un appel au 01 44 37 95 95."
+      pourquoi: >-
+        BROUILLON FACTUEL — à réécrire par Hamdy s'il veut y mettre sa voix.
+        C'est de la diplomatie culturelle : la MCJP représente la Fondation du Japon,
+        institution publique japonaise, et non une communauté japonaise de Paris.
+        Sa mission est de faire connaître le Japon à un public français, ce qui
+        explique la traduction systématique des conférences. Le tarif dépend
+        entièrement de l'exposition : certaines sont en entrée libre dans le hall,
+        d'autres payantes à l'étage. Une réservation peut être exigée même pour un
+        événement gratuit — mieux vaut vérifier la fiche avant de se déplacer.
       # Ce que le mécanisme ne dira jamais tout seul, et qu'il faut savoir :
       # cette fiche vaut dix ans. Elle s'écrit une fois par LIEU, jamais par
       # événement. C'est ce qui rend le coût éditorial tenable (quinze
       # soirées) au lieu d'impossible (une fiche par événement).
 
   # --- AUTRES LIEUX MONO-CULTURELS PRÉSENTS EN BASE ----------------------
-  # Le mécanisme fonctionne pour eux ; leurs fiches restent à écrire.
+  # Fiches sourcées le 03/09/2026 (sites officiels, URL citée dans `entree`).
   # Volumes constatés en base le 02/09/2026 (créneaux, pas événements).
 
   - nom: "Institut suédois"          # 84 + 53 créneaux sous deux orthographes
     culture: suede                   # « Institut Suédois » avec majuscule =
-    fiche: {}                        # le même lieu → appariement insensible
-                                     # à la casse, obligatoire.
+    fiche:                           # le même lieu → appariement insensible
+                                      # à la casse, obligatoire.
+      entree: >-
+        Gratuit, sans réservation — exposition permanente et expositions temporaires.
+        Source : paris.si.se/que-proposons-nous/exposition-permantente/
+      reservation: >-
+        Pas de réservation pour les expositions ni les visites guidées. Certains
+        événements (projections en plein air) sont en entrée libre dans la limite
+        des places disponibles.
+      langue: >-
+        Variable selon l'événement, annoncé sur chaque fiche : français, anglais,
+        ou VO suédoise sous-titrée français.
+      horaires: "Mardi à dimanche 12h-19h, nocturne le jeudi jusqu'à 21h."
+      acces: >-
+        Métro Saint-Paul (ligne 1) ou Chemin Vert (ligne 8). PMR partiel : réception,
+        salle d'exposition temporaire et auditorium accessibles par le jardin
+        (10 rue Elzévir) ; collection permanente non accessible seule, monte-escalier
+        disponible.
+      cadre: >-
+        Institut public de l'État suédois — « l'unique centre culturel que possède
+        la Suède à l'étranger ». Ni lieu de culte, ni fête communautaire.
+      tenue: "À VÉRIFIER — non publié sur le site officiel."
+      photos: "À VÉRIFIER — non publié sur le site officiel."
+      venir_seul: "À VÉRIFIER — non publié sur le site officiel."
+      non_inities: "À VÉRIFIER — non publié sur le site officiel."
+      pourquoi: >-
+        BROUILLON FACTUEL — à réécrire par Hamdy s'il veut y mettre sa voix.
+        La Suède n'a qu'un seul centre culturel à l'étranger, et c'est celui-là.
+        Tout y est gratuit et sans réservation, dans un hôtel particulier du Marais
+        avec un jardin ouvert : concrètement, on peut pousser la porte sans billet,
+        sans programme et sans rien connaître à la Suède, rester dix minutes ou deux
+        heures. Le jeudi, c'est ouvert jusqu'à 21h.
+        # NB : ce lieu coproduit un ciné-club nordique avec le Danemark, l'Islande,
+        # la Norvège et la Finlande (cf. mapping-ficep.md) — c'est exactement le
+        # cas que le mot-clé d'exclusion « nordique »/« scandinave » doit retirer.
 
   - nom: "Centre culturel suisse Paris"   # 130 créneaux — le plus gros du lot
     culture: suisse
-    fiche: {}
+    fiche:
+      entree: >-
+        Expositions gratuites. Les autres formats sont payants : projection, lecture,
+        atelier ou performance 5 €, spectacle ou concert 14 € (7 € réduit),
+        workshop 10 €. Conférences et tables rondes gratuites sur réservation.
+        Source : ccsparis.com/informations/
+      reservation: >-
+        Pas de réservation pour les expositions. Billetterie en ligne (Mapado) pour
+        les événements payants et les conférences gratuites.
+      langue: "À VÉRIFIER — pas de règle générale publiée, annoncé au cas par cas."
+      horaires: "Mardi à dimanche 14h-19h (exposition, buvette, librairie)."
+      acces: >-
+        Métro Rambuteau (ligne 11) ou Saint-Paul (ligne 1), bus 29.
+        Tous les espaces sont accessibles aux personnes à mobilité réduite.
+      cadre: >-
+        Antenne parisienne de Pro Helvetia, la fondation suisse pour la culture.
+        Mission déclarée : « faire connaître en France une création contemporaine
+        helvétique » et « promouvoir les échanges entre les scènes artistiques
+        suisses et françaises ».
+      tenue: "À VÉRIFIER — non publié sur le site officiel."
+      photos: "À VÉRIFIER — non publié sur le site officiel."
+      venir_seul: "À VÉRIFIER — non publié sur le site officiel."
+      non_inities: "À VÉRIFIER — non publié sur le site officiel."
+      pourquoi: >-
+        BROUILLON FACTUEL — à réécrire par Hamdy s'il veut y mettre sa voix.
+        C'est la vitrine parisienne de la fondation culturelle suisse : ce qu'on y
+        voit est de la création contemporaine, pas du patrimoine ni du folklore.
+        L'exposition est gratuite et libre d'accès l'après-midi ; le reste
+        (spectacles, ateliers) est payant mais reste sous les tarifs habituels
+        parisiens — 5 € une projection, 14 € un concert. Tout le lieu est accessible
+        en fauteuil.
 
   - nom: "Institut du Monde Arabe"        # 38 créneaux
     culture: monde-arabe
-    fiche: {}
+    fiche:
+      entree: >-
+        Musée : 10 € plein tarif (plus de 26 ans), 7 € pour un groupe d'amis de 6 à
+        9 personnes. Gratuit pour les moins de 26 ans, les personnes handicapées et
+        leur accompagnateur, les journalistes, les Amis de l'IMA — mais une
+        contremarque doit être retirée à l'accueil, même pour les gratuités.
+        Spectacles de 20 à 26 €, 12 € pour les moins de 26 ans. Tarif des
+        expositions annoncé exposition par exposition. Librairie-boutique et
+        terrasse panoramique en accès libre et gratuit.
+        Source : imarabe.org/fr/horaires-tarifs — la FAQ du même site affiche
+        encore 9 €, elle est périmée.
+      reservation: >-
+        « Réserver sur internet n'est pas obligatoire mais recommandé ». Vivement
+        conseillée pour certains spectacles, y compris gratuits. Réservation sur
+        place possible du mardi au dimanche 10h-17h, sans frais.
+      langue: "À VÉRIFIER — non publié sur le site officiel."
+      horaires: >-
+        Mardi à vendredi 10h-18h, week-ends et jours fériés 10h-19h. Fermé le lundi
+        et le 1er mai. Caisses fermées 45 minutes avant. Bibliothèque : mardi à
+        dimanche 13h-19h.
+      acces: >-
+        Métro Jussieu (ligne 7, sortie 1) ou Cardinal Lemoine (ligne 10, sortie 2).
+        ⚠️ « Aucune station de métro dans les environs de l'IMA n'est accessible aux
+        usagers de fauteuils roulants ». Deux places de parking PMR gratuites sur le
+        parvis ; fauteuils roulants, casques antibruit et loupes prêtés à l'accueil.
+      cadre: >-
+        Fondation de droit privé née d'un partenariat entre la France et la Ligue
+        arabe. « L'Institut du monde arabe est un établissement culturel laïc » —
+        ce n'est pas un lieu de culte, il n'y a pas de salle de prière.
+      tenue: "À VÉRIFIER — non publié sur le site officiel."
+      photos: >-
+        Autorisées dans les collections permanentes et temporaires pour un usage
+        strictement privé. Flash interdit. Usage commercial soumis à demande.
+      venir_seul: "À VÉRIFIER — non publié sur le site officiel."
+      non_inities: "À VÉRIFIER — non publié sur le site officiel."
+      pourquoi: >-
+        BROUILLON FACTUEL — à réécrire par Hamdy s'il veut y mettre sa voix.
+        C'est le seul des six lieux dont le musée est payant, mais l'essentiel de ce
+        qu'on peut y faire ne l'est pas : la terrasse panoramique et la
+        librairie-boutique sont en accès libre, et le musée est gratuit avant 26 ans
+        — à condition de retirer une contremarque à l'accueil, gratuité comprise.
+        L'institution se définit explicitement comme laïque : il n'y a pas de salle
+        de prière, ce n'est pas un lieu de culte. Point de vigilance réel :
+        aucune station de métro proche n'est accessible en fauteuil roulant, l'IMA
+        le dit lui-même.
 
   - nom: "Institut des Cultures d'Islam (ICI)"   # 48 créneaux
     culture: cultures-islam
-    fiche: {}
+    fiche:
+      entree: >-
+        « L'accès aux expositions est gratuit, sans réservation. » Les visites
+        commentées mensuelles du samedi sont également gratuites.
+        Source : institut-cultures-islam.org/infos-pratiques/
+      reservation: >-
+        Pas de réservation pour les expositions. Les concerts, cours et autres
+        événements ont des tarifs et des modalités propres, annoncés fiche par fiche.
+      langue: "À VÉRIFIER — non publié sur le site officiel."
+      horaires: >-
+        ICI Léon : mercredi à dimanche 12h-19h. ICI Stephenson : mercredi à dimanche
+        14h-19h, vendredi 16h-19h. Fermés lundi, mardi, jours fériés, et hors
+        périodes d'exposition.
+      acces: >-
+        Métro Château Rouge, Marx Dormoy ou La Chapelle ; RER Gare du Nord ou Magenta.
+        Tous les espaces d'exposition sont accessibles aux personnes à mobilité
+        réduite, fauteuils roulants prêtés à l'accueil, chiens guides acceptés.
+      cadre: >-
+        Association loi 1901, établissement culturel de la Ville de Paris, défini
+        comme un « centre d'art contemporain » montrant « la diversité et le
+        dynamisme des cultures d'Islam dans la création contemporaine ».
+        Point souvent mal compris : l'ICI n'est pas un lieu de culte, mais une salle
+        de prière existe au 1er étage du site Stephenson — « cet espace cultuel
+        juridiquement et financièrement indépendant est géré par la Grande Mosquée de
+        Paris, dans une configuration respectueuse de la loi de 1905 ». L'accès à la
+        salle de prière, aux expositions, aux cours et au hammam se fait par le même
+        hall.
+      tenue: "À VÉRIFIER — non publié sur le site officiel."
+      photos: "À VÉRIFIER — non publié sur le site officiel."
+      venir_seul: "À VÉRIFIER — non publié sur le site officiel."
+      non_inities: "À VÉRIFIER — non publié sur le site officiel."
+      pourquoi: >-
+        BROUILLON FACTUEL — à réécrire par Hamdy s'il veut y mettre sa voix.
+        C'est un centre d'art contemporain municipal, pas un lieu de culte : les
+        expositions sont gratuites et sans réservation, sur deux adresses à cinq
+        minutes l'une de l'autre dans le 18e. La nuance qui compte, et que l'ICI
+        énonce lui-même : une salle de prière indépendante, gérée par la Grande
+        Mosquée de Paris, occupe le premier étage du site Stephenson, et on entre
+        par le même hall que l'exposition. Savoir ça évite autant le malentendu que
+        la gêne. Tout est accessible en fauteuil, les chiens guides sont admis.
 
   - nom: "Centre culturel canadien à Paris"      # 4 créneaux
     culture: canada
+    fiche:
+      entree: >-
+        Gratuit pour toutes les activités organisées par le Centre.
+        Source : canada-culture.org/faq/
+      reservation: >-
+        Nécessaire pour certains événements, via la billetterie du site (gratuite).
+        Visites libres sans réservation ; visites de groupe sur demande par courriel.
+      langue: "À VÉRIFIER — pas de règle générale publiée."
+      horaires: >-
+        Lundi à vendredi 10h-18h, dernière entrée 17h30. Fermé samedi et dimanche.
+      acces: >-
+        Métro Saint-Philippe-du-Roule ou Miromesnil (ligne 9), Miromesnil (ligne 13).
+        Accessible aux personnes à mobilité réduite.
+      cadre: >-
+        Institut public intégré à l'ambassade du Canada — « cœur de la diplomatie
+        culturelle du Canada en France ». Mission déclarée : « promouvoir la création
+        contemporaine canadienne la plus innovante qui soit ».
+      tenue: "À VÉRIFIER — non publié sur le site officiel."
+      photos: >-
+        Autorisées pour un usage personnel non commercial. Trépied interdit.
+      venir_seul: "À VÉRIFIER — non publié sur le site officiel."
+      non_inities: "À VÉRIFIER — non publié sur le site officiel."
+      pourquoi: >-
+        BROUILLON FACTUEL — à réécrire par Hamdy s'il veut y mettre sa voix.
+        Tout y est gratuit, y compris les événements — c'est financé par l'ambassade,
+        dont le centre fait partie. La contrepartie est l'horaire : ouvert du lundi
+        au vendredi seulement, fermé le week-end, dernière entrée à 17h30. C'est donc
+        un lieu de pause en journée, pas une sortie du samedi. Les photos sont
+        autorisées pour un usage personnel.
+
+  # --- VARIANTES DE NOM CONSTATÉES DANS LE FLUX FICEP (03/09/2026) -------
+  # Le flux FICEP nomme différemment 3 lieux déjà en base côté QFAP (vérifié
+  # en ingérant réellement le flux, pas seulement lu dans la doc) :
+  #   QFAP   "Centre culturel canadien à Paris"    FICEP "Centre culturel canadien"
+  #   QFAP   "Centre culturel suisse Paris"        FICEP "Centre culturel suisse"
+  #   QFAP   "Maison de la culture du Japon à Paris" FICEP "Maison de la Culture du Japon"
+  # Même lieu physique, `_norm()` ne rapproche que la casse/accents — pas les
+  # mots en plus ou en moins. Sans ces entrées, les événements FICEP de ces
+  # trois lieux resteraient invisibles à la facette culture.
+  - nom: "Centre culturel canadien"
+    culture: canada
     fiche: {}
 
+  - nom: "Centre culturel suisse"
+    culture: suisse
+    fiche: {}
+
+  - nom: "Maison de la Culture du Japon"
+    culture: japon
+    fiche: {}
+
+  # --- 8 LIEUX AJOUTÉS LE 03/09/2026 VIA LE FLUX FICEP (option C) --------
+  # Factuel minimal (horaires/tarif/accès glanés en marge du mapping des
+  # cultures, PAS une fiche complète comme les six lieux ci-dessus) — fiche
+  # détaillée à écrire lieu par lieu, comme pour suede/suisse/canada/etc.
+  # avant le pilote japonais. Noms tels que vérifiés dans mapping-ficep.md ;
+  # doivent correspondre au champ LOCATION du flux FICEP (appariement
+  # insensible à la casse, voir cultures.py::_norm).
+
+  - nom: "Instituto Cultural de México"
+    culture: mexique
+    fiche: {}   # Entrée libre, mar-ven 10h-13h/14h-18h, sam 15h-19h. Métro Filles
+                # du Calvaire ou Saint-Sébastien-Froissart. Institut d'État
+                # (Secrétariat mexicain des Relations extérieures).
+
+  - nom: "Centre tchèque de Paris"
+    culture: republique-tcheque
+    fiche: {}   # Galerie jeu-sam 13h-19h. Métro Saint-Germain-des-Prés ou Mabillon.
+                # Tarifs variables (ex. ciné-concert 10 €). Centre d'État, réseau
+                # Czech Centres.
+
+  - nom: "Goethe-Institut"
+    culture: allemagne
+    fiche: {}   # Accueil lun-ven 9h-21h, sam 10h-17h. Bibliothèque en accès libre.
+                # Événements gratuits ou payants (ex. concert 15 €, réduit 7 €).
+                # ⚠️ Programme aussi des événements multi-pays (festival de cinéma
+                # soudanais, Journée européenne des langues) — c'est le cas d'usage
+                # des mots-clés d'exclusion.
+
+  - nom: "Institut finlandais"
+    culture: finlande
+    fiche: {}   # Gratuit, « open to all public, free of charge ». Mar-sam 11h-18h.
+                # Métro Cluny-La Sorbonne, Saint-Michel, Odéon. Accessible en fauteuil.
+                # ⚠️ Coproduit un ciné-club nordique avec le Danemark, l'Islande, la
+                # Norvège et la Suède — cf. mot-clé d'exclusion « nordique ».
+
+  - nom: "Centre Wallonie-Bruxelles I Galerie d'exposition"
+    culture: belgique
+    fiche: {}
+
+  - nom: "Centre Wallonie-Bruxelles I Salle de Cinéma"
+    culture: belgique
+    fiche: {}
+
+  - nom: "Centre Wallonie-Bruxelles I Salle de théâtre"
+    culture: belgique
+    fiche: {}
+
+  - nom: "Centre Wallonie-Bruxelles I Cours intérieure"
+    culture: belgique
+    fiche: {}
+
+  - nom: "Centre Wallonie Bruxelles"
+    culture: belgique
+    fiche: {}   # 5 orthographes du même lieu dans le flux FICEP (galerie, cinéma,
+                # théâtre, cour intérieure, générique) : mêmes horaires/tarifs pour
+                # toutes. Expositions et rencontres gratuites ; spectacles 10 €/8 €,
+                # cinéma 5 €/3 €. Galerie lun-sam 11h-19h, nocturne jeudi 21h. Métro
+                # Rambuteau ou Châtelet. ⚠️ Programme aussi le francophone
+                # panafricain (Rencontres Archipel) — cf. mot-clé d'exclusion
+                # « francophone »/« panafricain ».
+
+  - nom: "Centre Culturel Irlandais"
+    culture: irlande
+    fiche: {}   # Entrée libre. Expositions tous les jours 14h-18h, mercredi jusqu'à
+                # 20h. Réservation recommandée, place garantie jusqu'à 15 min avant.
+                # Métro Cardinal Lemoine ou Place Monge. ⚠️ Se définit lui-même comme
+                # un « carrefour international » — vigilance sur l'exclusivité.
+
+  - nom: "Institut Culturel Italien de Paris"
+    culture: italie
+    fiche: {}   # Lun-ven 10h-13h et 15h-18h. Métro Rue du Bac, Sèvres-Babylone ou
+                # Varenne. Organisme du ministère italien des Affaires étrangères.
+
+  - nom: "Institut Polonais de Paris"
+    culture: pologne
+    fiche: {}   # ⚠️ Bâtiment fermé pour travaux au 03/09/2026 : toute la
+                # programmation est hors les murs, dans des salles partenaires — le
+                # lieu déclaré par le flux FICEP peut donc être faux. À surveiller
+                # avant de publier largement cette culture.
+
+  # --- LIEUX FICEP VOLONTAIREMENT NON MAPPÉS (décision du 03/09) ---------
+  # turquie  : Yunus Emre Institut — le site de l'antenne France ne publie
+  #            aucune programmation parisienne, exclusivité invérifiable.
+  # lituanie : Ambassade de Lituanie — événements sur invitation, pas de
+  #            billetterie publique ; un agenda public n'a pas à les afficher.
+  # Ne pas les ajouter sans nouvelle vérification à la source.
+
 cultures:
-  japon:          { nom: "Japon" }
-  suede:          { nom: "Suède" }
-  suisse:         { nom: "Suisse" }
-  monde-arabe:    { nom: "Monde arabe" }
-  cultures-islam: { nom: "Cultures d'Islam" }
-  canada:         { nom: "Canada" }
+  japon:               { nom: "Japon" }
+  suede:                { nom: "Suède" }
+  suisse:               { nom: "Suisse" }
+  monde-arabe:          { nom: "Monde arabe" }
+  cultures-islam:       { nom: "Cultures d'Islam" }
+  canada:               { nom: "Canada" }
+  mexique:              { nom: "Mexique" }
+  republique-tcheque:   { nom: "République tchèque" }
+  allemagne:            { nom: "Allemagne" }
+  finlande:             { nom: "Finlande" }
+  belgique:             { nom: "Belgique (Wallonie-Bruxelles)" }
+  irlande:              { nom: "Irlande" }
+  italie:               { nom: "Italie" }
+  pologne:              { nom: "Pologne" }

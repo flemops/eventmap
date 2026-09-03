@@ -217,6 +217,87 @@ entrées à `feeds.yaml`, sans toucher au code.
 
 ---
 
+## D14 — Culture d'un lieu : exclusif → majoritaire + mots-clés d'exclusion
+
+**Contexte.** D2-D13 et l'en-tête historique de `cultures.yaml` posaient une
+règle stricte : un lieu n'entre que si TOUT ce qu'il programme relève de la
+culture annoncée. Appliquée aux 10 lieux du flux FICEP branché le 03/09
+(voir D-suivante), elle en éliminait 6 sur 10 pour une minorité
+d'événements multi-pays — et elle mordait déjà, sans que personne l'ait vu,
+sur l'Institut suédois déjà en base (ciné-club coproduit avec 4 autres pays).
+
+**Décision.** Option C, tranchée par Hamdy le 03/09/2026 (voir
+`mapping-ficep.md`) : un lieu entre s'il est *majoritairement* dédié à sa
+culture, plus une liste de mots-clés d'exclusion (`exclusions:` dans
+`cultures.yaml`) qui retire l'attribut événement par événement quand le
+titre/la description trahit un événement multi-pays. Le libellé affiché
+suit : « Lieux dédiés à la culture X », jamais « Culture X » — la facette
+qualifie le lieu, pas l'événement.
+
+**Conséquence.** Faux positif assumé (une soirée cinéma soudanais peut
+s'afficher sous « Allemagne ») plutôt qu'un lieu entier écarté pour une
+exception. Le nombre d'événements écartés par l'exclusion est exposé dans
+`/health` (`cultures.excluded_events`) — sans ce chiffre, une règle trop
+large ou trop étroite passerait inaperçue.
+
+---
+
+## D15 — Dédoublonnage inter-sources réversible, remplace la fusion pré-upsert de D9
+
+**Contexte.** D9 fusionnait les doublons inter-sources AVANT l'upsert : le
+perdant n'était simplement jamais écrit en base, sans trace, sans lien —
+irréversible par construction. Correct tant qu'une seule source alimentait
+la base ; insuffisant dès que FICEP (03/09) crée de vrais doublons inter-
+sources à grande échelle et que le paquet de déploiement exige un garde-fou
+explicite : « la fusion ne supprime jamais un enregistrement ».
+
+**Décision.** Toutes les sources sont upsertées telles quelles. Une passe
+`sources.dedup_inter_source()`, exécutée après l'upsert, marque les
+doublons via une colonne `doublon_de` (jamais de DELETE) : `db.search`
+filtre à la lecture. Trois passes documentées dans `paquet-deploiement.md`
+§3 — l'exacte (même `source`+`source_id`, déjà garantie par la contrainte
+UNIQUE), la forte (titres ≥ 0,85, ± 30 min, < 150 m — fusionne aussi les
+champs par priorité : prix QFAP, géo FICEP, description QFAP) et la faible
+(titres ≥ 0,92, même jour, même lieu — lien seul, sans réécrire les champs).
+
+**Conséquence.** Corriger un faux positif de rapprochement est un simple
+`UPDATE events SET doublon_de = NULL`, pas une réingestion. La passe
+recalcule tout à chaque cycle sur les événements à venir (reset puis
+reclassement), donc un changement de priorité entre deux sources ou une
+source qui disparaît ne laisse pas de lien orphelin. Les compteurs par passe
+sont exposés dans `/health.dedup` pour repérer une passe qui s'emballe.
+L'ancienne `sources.dedupe()` (fusion en mémoire, pré-upsert) est supprimée :
+elle n'a plus d'appelant et sa suppression évite un second mécanisme de
+dédoublonnage à maintenir en parallèle.
+
+---
+
+## D16 — FICEP : premier flux `feeds.yaml` actif, filtré par boîte englobante
+
+**Contexte.** `feeds.yaml` était vide depuis D13 (« conservé avec les
+pistes »). FICEP (10 instituts culturels étrangers, via OpenAgenda, licence
+ouverte, 149 VEVENT vérifiés le 03/09) est le premier flux réellement
+branché. Deux pièges trouvés en le sourçant : (1) le flux déborde de son
+périmètre déclaré — quelques entrées à Arles, Bruxelles, Lyon ; (2) l'UID
+OpenAgenda encode l'occurrence après « // » (`35008205//20260917T080000Z`),
+ce qui rend l'identifiant illisible en dehors du stockage si on ne le
+découpe pas.
+
+**Décision.** `feeds.yaml` gagne un champ optionnel `geo_bbox` par flux
+(lat/lon min/max), lu dans `main._build_fetchers` et appliqué après le parse
+ICS dans `_ics_fetcher` — un événement hors boîte est écarté et journalisé,
+jamais cru sur parole. `sources.parse_ics` découpe systématiquement l'UID au
+premier « // » (`stable_id` de repli si l'UID est absent) : sans « // »
+c'est un no-op, donc sans risque pour les flux déjà en place.
+
+**Conséquence.** Élargir à un nouveau flux hors Île-de-France n'exige qu'une
+entrée `feeds.yaml` avec le bon `geo_bbox`, sans toucher au code — dans
+l'esprit de D13. Le filtre géo est une boîte large (marge sur la petite
+couronne) : c'est le rayon de recherche de `/api/events` (8 km max depuis
+Châtelet) qui fait le tri fin, pas ce filtre d'ingestion.
+
+---
+
 ## Backlog — hors périmètre, consigné pour ne pas l'oublier
 
 - **Élargissement hors Paris** : voir D13 et `docs/sources.md` § sondage

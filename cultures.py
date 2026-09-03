@@ -41,6 +41,34 @@ def _norm(venue: str) -> str:
     return " ".join(s.lower().split())
 
 
+def _norm_text(s: str) -> str:
+    """Même normalisation que `_norm`, sans compresser les espaces internes —
+    sert à chercher un mot-clé dans un titre/description, pas à apparier un
+    nom de lieu exact."""
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return s.lower()
+
+
+def _is_excluded(cle: str, title: str, description: str | None, data: dict) -> bool:
+    """Option C (03/09/2026, décision de Hamdy — voir l'en-tête de
+    cultures.yaml) : un lieu est admis s'il est *majoritairement* dédié à sa
+    culture, et on retire l'attribut événement par événement quand le titre
+    ou la description trahit un événement multi-pays — soit un mot-clé de
+    `exclusions`, soit le nom d'une AUTRE culture déclarée dans ce fichier.
+    """
+    text = _norm_text(f"{title} {description or ''}")
+    if any(_norm_text(kw) in text for kw in data.get("exclusions") or []):
+        return True
+    for autre_cle, meta in data["cultures"].items():
+        if autre_cle == cle:
+            continue
+        nom = _norm_text(meta.get("nom", ""))
+        if nom and nom in text:
+            return True
+    return False
+
+
 def _load() -> dict:
     """Charge le fichier, en le relisant s'il a changé sur le disque."""
     global _cache, _cache_mtime
@@ -58,6 +86,7 @@ def _load() -> dict:
 
     raw = yaml.safe_load(CULTURES_PATH.read_text(encoding="utf-8")) or {}
     cultures = raw.get("cultures") or {}
+    exclusions = raw.get("exclusions") or []
     by_venue: dict[str, dict] = {}
 
     for lieu in raw.get("lieux") or []:
@@ -77,16 +106,30 @@ def _load() -> dict:
             "fiche": lieu.get("fiche") or {},
         }
 
-    _cache, _cache_mtime = {"by_venue": by_venue, "cultures": cultures}, mtime
-    log.info("cultures : %d lieux, %d cultures", len(by_venue), len(cultures))
+    _cache = {"by_venue": by_venue, "cultures": cultures, "exclusions": exclusions}
+    _cache_mtime = mtime
+    log.info("cultures : %d lieux, %d cultures, %d mots-clés d'exclusion",
+             len(by_venue), len(cultures), len(exclusions))
     return _cache
 
 
-def for_venue(venue: str | None) -> dict | None:
-    """La culture d'un lieu, ou None s'il n'est pas mono-culturel."""
+def for_venue(venue: str | None, title: str | None = None,
+             description: str | None = None) -> dict | None:
+    """La culture d'un lieu, ou None s'il n'est pas mono-culturel.
+
+    `title`/`description` permettent d'appliquer l'option C : un événement
+    manifestement multi-pays (mot-clé d'exclusion, ou nom d'une autre
+    culture) n'hérite pas de l'attribut du lieu, même si le lieu reste admis.
+    """
     if not venue:
         return None
-    return _load()["by_venue"].get(_norm(venue))
+    data = _load()
+    v = data["by_venue"].get(_norm(venue))
+    if not v:
+        return None
+    if title is not None and _is_excluded(v["cle"], title, description, data):
+        return None
+    return v
 
 
 def venues_for(culture: str) -> list[str]:
@@ -108,3 +151,26 @@ def all_cultures() -> list[dict]:
         {"cle": cle, "nom": meta.get("nom", cle), "lieux": counts.get(cle, 0)}
         for cle, meta in data["cultures"].items()
     ]
+
+
+def excluded_count(con) -> int:
+    """Nombre d'événements de lieux mono-culturels écartés par l'option C
+    (mot-clé d'exclusion ou nom d'une autre culture) — pour /health. Calculé
+    à la demande plutôt qu'accumulé en mémoire : reste exact même si le
+    fichier est corrigé à chaud entre deux appels.
+    """
+    data = _load()
+    venues = [v["lieu"] for v in data["by_venue"].values()]
+    if not venues:
+        return 0
+    placeholders = ", ".join("?" for _ in venues)
+    rows = con.execute(
+        f"SELECT venue, title, description FROM events WHERE lower(venue) IN ({placeholders})",
+        [v.lower() for v in venues],
+    ).fetchall()
+    n = 0
+    for r in rows:
+        v = data["by_venue"].get(_norm(r["venue"]))
+        if v and _is_excluded(v["cle"], r["title"], r["description"], data):
+            n += 1
+    return n

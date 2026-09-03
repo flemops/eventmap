@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS events (
     url         TEXT,
     updated_at  TEXT,
     ingested_at TEXT NOT NULL,
+    doublon_de  INTEGER REFERENCES events(id),
     UNIQUE (source, source_id, start)
 );
 CREATE INDEX IF NOT EXISTS idx_events_start ON events (start);
@@ -114,7 +115,20 @@ def connect(path: str = DB_PATH) -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys = ON")
     con.create_function("haversine_km", 4, _haversine_km, deterministic=True)
     con.executescript(SCHEMA)
+    _migrate(con)
     return con
+
+
+def _migrate(con: sqlite3.Connection) -> None:
+    """Migrations additives sur une base déjà en prod — jamais de DROP/RENAME.
+
+    `CREATE TABLE IF NOT EXISTS` ne touche pas une table existante : une
+    colonne ajoutée au schéma doit être posée ici par introspection
+    (`PRAGMA table_info`), pas seulement dans `SCHEMA`.
+    """
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(events)")}
+    if "doublon_de" not in cols:
+        con.execute("ALTER TABLE events ADD COLUMN doublon_de INTEGER REFERENCES events(id)")
 
 
 @contextmanager
@@ -221,6 +235,9 @@ def search(
     # par julianday() pour comparer des nombres, pas des chaînes.
     clauses = [
         "lat IS NOT NULL",
+        # Doublon inter-sources réversible (voir sources.dedup_inter_source) :
+        # jamais supprimé, seulement écarté à la lecture.
+        "doublon_de IS NULL",
         "julianday(COALESCE(end, start)) + (CASE WHEN end IS NULL THEN 0.125 ELSE 0 END) > julianday(:start_from)",
         "julianday(start) < julianday(:start_to)",
         "haversine_km(lat, lon, :lat, :lon) <= :radius",

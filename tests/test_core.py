@@ -80,23 +80,45 @@ def test_today_starts_now_not_midnight():
 
 # ----------------------------------------------------------------- dedupe
 
-def _ev(title, start, lat=48.86, lon=2.35, src="a", desc=None):
-    return db.Event(source=src, source_id=title, start=start, title=title, lat=lat, lon=lon, description=desc)
+def _ev(title, start, lat=48.86, lon=2.35, src="a", desc=None, source_id=None,
+       venue=None, price_type="unknown"):
+    return db.Event(source=src, source_id=source_id or title, start=start, title=title,
+                    lat=lat, lon=lon, description=desc, venue=venue, price_type=price_type)
 
 
-def test_dedupe_merges_same_title_same_day_close_by():
-    t = datetime(2026, 9, 1, 20, 0, tzinfo=timezone.utc)
-    a = _ev("Concert Jazz", t, src="qfap", desc="long description ici")
-    b = _ev("concert  JAZZ !", t + timedelta(minutes=15), lat=48.8605, lon=2.3505, src="ics")  # ~60 m
-    kept = sources.dedupe([a, b])
-    assert len(kept) == 1 and kept[0].source == "qfap"   # la plus décrite gagne
+def test_parse_ics_uid_splits_on_double_slash():
+    """OpenAgenda (FICEP) encode l'occurrence après « // » dans l'UID :
+    35008205//20260917T080000Z -> identifiant stable 35008205."""
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    dt = (now + timedelta(days=1)).strftime("%Y%m%dT%H%M%SZ")
+    ics = f"""BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:35008205//{dt}
+SUMMARY:Concert
+DTSTART:{dt}
+END:VEVENT
+END:VCALENDAR"""
+    evs = sources.parse_ics(ics, source="ics", window=(now, now + timedelta(days=20)))
+    assert evs[0].source_id == "35008205"
 
 
-def test_dedupe_keeps_far_apart_or_different_day():
-    t = datetime(2026, 9, 1, 20, 0, tzinfo=timezone.utc)
-    far = _ev("Concert Jazz", t, lat=48.90, lon=2.40)     # ~6 km
-    other_day = _ev("Concert Jazz", t + timedelta(days=1))
-    assert len(sources.dedupe([_ev("Concert Jazz", t), far, other_day])) == 3
+def test_parse_ics_reads_geo():
+    """Régression du 03/09 : icalendar>=6 renvoie un `str` depuis
+    `vGeo.to_ical()`, pas des `bytes` — un `.decode()` non gardé faisait
+    échouer silencieusement le parsing GEO de 100 % des événements FICEP."""
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    dt = (now + timedelta(days=1)).strftime("%Y%m%dT%H%M%SZ")
+    ics = f"""BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:test-geo
+SUMMARY:Concert
+DTSTART:{dt}
+GEO:48.858764;2.342319
+END:VEVENT
+END:VCALENDAR"""
+    evs = sources.parse_ics(ics, source="ics", window=(now, now + timedelta(days=20)))
+    assert evs[0].lat == pytest.approx(48.858764)
+    assert evs[0].lon == pytest.approx(2.342319)
 
 
 # ----------------------------------------------------------- base + search
@@ -106,6 +128,62 @@ def con(tmp_path):
     c = db.connect(str(tmp_path / "t.db"))
     yield c
     c.close()
+
+
+# ----------------------------------------------------- dédup inter-sources
+
+def test_dedup_forte_merges_and_search_hides_loser(con):
+    """Non-régression du paquet du 03/09 : l'expo Sumo de la MCJP, présente
+    dans QFAP et FICEP, doit produire UN événement visible, en gardant la
+    géo de FICEP (plus fiable, GEO natif) et le prix de QFAP (FICEP ne le
+    connaît pas)."""
+    t = datetime(2026, 9, 20, 19, 0, tzinfo=timezone.utc)
+    qfap = db.Event(source="qfap", source_id="qfap-sumo", title="Sumo, forces sacrées",
+                    start=t, venue="Maison de la culture du Japon à Paris",
+                    lat=48.8540, lon=2.2920, price_type="free",
+                    description="Description QFAP, plus détaillée")
+    ficep = db.Event(
+        source="ics:https://openagenda.com/agendas/61665301/events.v2.ics?relative[]=upcoming",
+        source_id="35008205", title="Sumo, forces sacrées", start=t + timedelta(minutes=10),
+        venue="Maison de la Culture du Japon à Paris",  # casse différente : même lieu
+        lat=48.8546, lon=2.2926, price_type="unknown", description="via OpenAgenda",
+    )
+    db.upsert_events(con, [qfap, ficep])
+    counts = sources.dedup_inter_source(con, now=t - timedelta(days=1))
+    assert counts == {"forte": 1, "faible": 0}
+
+    visible = db.search(con, lat=48.8546, lon=2.2926, radius_km=1,
+                        start_from=t - timedelta(hours=1), start_to=t + timedelta(hours=1))
+    assert len(visible) == 1
+    assert visible[0]["title"] == "Sumo, forces sacrées"
+    assert (visible[0]["lat"], visible[0]["lon"]) == (48.8546, 2.2926)   # géo FICEP conservée
+    assert visible[0]["price_type"] == "free"                            # prix QFAP conservé
+
+
+def test_dedup_keeps_distant_or_different_titled_events(con):
+    t = datetime(2026, 9, 20, 19, 0, tzinfo=timezone.utc)
+    db.upsert_events(con, [
+        db.Event(source="qfap", source_id="a", title="Concert Jazz", start=t, lat=48.86, lon=2.35),
+        db.Event(source="ics:x", source_id="b", title="Concert Jazz", start=t, lat=48.90, lon=2.40),  # ~6 km
+        db.Event(source="ics:x", source_id="c", title="Exposition photo", start=t, lat=48.861, lon=2.351),
+    ])
+    counts = sources.dedup_inter_source(con, now=t - timedelta(days=1))
+    assert counts == {"forte": 0, "faible": 0}
+    assert db.stats(con)["total"] == 3
+
+
+def test_dedup_reversible_never_deletes(con):
+    t = datetime(2026, 9, 20, 19, 0, tzinfo=timezone.utc)
+    db.upsert_events(con, [
+        db.Event(source="qfap", source_id="a", title="Nuit blanche", start=t, lat=48.86, lon=2.35),
+        db.Event(source="ics:x", source_id="b", title="Nuit blanche", start=t, lat=48.8605, lon=2.3505),
+    ])
+    sources.dedup_inter_source(con, now=t - timedelta(days=1))
+    assert db.stats(con)["total"] == 2   # les deux lignes existent toujours
+    loser = con.execute("SELECT id FROM events WHERE doublon_de IS NOT NULL").fetchone()
+    assert loser is not None
+    con.execute("UPDATE events SET doublon_de = NULL WHERE id = ?", (loser["id"],))
+    assert db.stats(con)["total"] == 2   # un simple UPDATE suffit à annuler le lien
 
 
 def test_upsert_is_idempotent(con):

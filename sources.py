@@ -147,16 +147,41 @@ def parse_ics(raw: bytes | str, *, source: str, default_url: str | None = None,
         end = _ical_to_dt(dtend.dt) if dtend is not None else None
         duration = (end - start) if end else None
 
-        uid = str(comp.get("UID") or stable_id(summary, start.isoformat()))
+        # OpenAgenda (FICEP) encode l'occurrence après « // » dans l'UID
+        # (ex. « 35008205//20260917T080000Z ») : découper dessus donne
+        # l'identifiant stable de la série, commun à toutes ses occurrences.
+        # Sans coupure, chaque créneau récurrent porterait un source_id
+        # différent — inoffensif pour l'UNIQUE(source, source_id, start) vu
+        # que `start` diffère déjà, mais l'identifiant perdrait tout son sens
+        # en dehors du stockage (logs, rapprochement manuel). Sans « // »
+        # dans l'UID, le split est un no-op.
+        uid = str(comp.get("UID") or stable_id(summary, start.isoformat())).split("//", 1)[0]
         url = str(comp.get("URL") or default_url or "")
         location = str(comp.get("LOCATION", "")).strip() or None
+        if location and " - " in location:
+            # Convention OpenAgenda (vérifiée le 03/09 sur le flux FICEP) :
+            # LOCATION = "Nom du lieu - adresse", jamais le nom seul. Sans
+            # ce découpage, `venue` contenait l'adresse entière et ne
+            # correspondait plus jamais à aucun nom de `cultures.yaml`.
+            # Coupe sur le PREMIER " - " espacé (pas tout tiret) : des noms
+            # comme « Centre Wallonie-Bruxelles I Cours intérieure » ou une
+            # adresse « 127-129 rue Saint Martin » ont des tirets non
+            # espacés qui ne doivent pas être pris pour le séparateur.
+            location = location.split(" - ", 1)[0].strip() or location
         description = clean_html(str(comp.get("DESCRIPTION", "")))
         last_mod = comp.get("LAST-MODIFIED")
         updated = _ical_to_dt(last_mod.dt) if last_mod is not None else None
         lat = lon = None
         if comp.get("GEO"):
             try:
-                lat, lon = (float(x) for x in comp["GEO"].to_ical().decode().split(";"))
+                # icalendar>=6 renvoie un str depuis vGeo.to_ical() (pas des
+                # bytes comme les autres propriétés) : bug réel trouvé le
+                # 03/09 en testant contre le flux FICEP — sans ce garde-fou,
+                # `.decode()` levait AttributeError, avalée silencieusement,
+                # et 100 % des événements du flux perdaient leur géoloc.
+                raw = comp["GEO"].to_ical()
+                raw = raw.decode() if isinstance(raw, bytes) else raw
+                lat, lon = (float(x) for x in raw.split(";"))
             except (ValueError, AttributeError):
                 pass
         categories = comp.get("CATEGORIES")
@@ -316,6 +341,15 @@ async def aggregate(fetchers: dict[str, Fetcher], *, concurrency: int = 4,
 
 
 # ---------------------------------------------------------- dédoublonnage
+#
+# Design du 03/09/2026 (remplace la fusion pré-upsert de D9/docs/decisions.md,
+# qui écartait silencieusement le perdant avant même l'écriture en base).
+# Garde-fou du paquet de déploiement : « la fusion ne supprime jamais un
+# enregistrement ». Toutes les sources sont donc upsertées telles quelles ;
+# cette passe tourne APRÈS l'upsert (voir main.refresh) et se contente de
+# MARQUER les perdants (colonne `doublon_de`, jamais de DELETE) — `db.search`
+# les filtre à la lecture. Réversible par construction : corriger un faux
+# positif est un simple UPDATE, pas une réingestion.
 
 _NORM_RE = re.compile(r"[^a-z0-9]+")
 
@@ -326,42 +360,142 @@ def _norm_title(t: str) -> str:
     return _NORM_RE.sub(" ", t).strip()
 
 
-def dedupe(events: list[Event], *, max_distance_m: float = 200.0) -> list[Event]:
-    """Fusionne les doublons inter-sources.
+def _norm_venue(v: str) -> str:
+    import unicodedata
+    v = unicodedata.normalize("NFKD", v)
+    v = "".join(c for c in v if not unicodedata.combining(c))
+    return " ".join(v.lower().split())
 
-    Clé : titre normalisé (minuscules, sans accents ni ponctuation) + même
-    jour + distance < 200 m. Heuristique assumée comme imparfaite : deux
-    séances différentes d'un même film dans un même cinéma le même jour
-    seront fusionnées si elles ont le même titre — mais dans ce cas elles
-    ont aussi la même ligne dans la base (même source_id, start différent),
-    donc seule la version « meilleure » est conservée par créneau.
 
-    Priorité : source avec géoloc > sans ; puis description la plus longue.
+def _title_similarity(a: str, b: str) -> float:
+    from difflib import SequenceMatcher
+    return SequenceMatcher(None, _norm_title(a), _norm_title(b)).ratio()
+
+
+# Priorité par champ en cas de fusion (passe forte uniquement) — la source
+# la plus riche gagne le champ. Un seul nom par source réelle aujourd'hui ;
+# étendre le tuple au fil de l'ajout de nouvelles sources (régional, Agenda
+# Culturel) ne touche que cette table.
+_FIELD_PRIORITY = {
+    "price_type": ("qfap",),
+    "geo": ("ficep", "qfap"),
+    "description": ("qfap",),
+}
+
+
+def _source_family(source: str) -> str:
+    if source == "qfap":
+        return "qfap"
+    if "agendas/61665301" in source:   # FICEP via OpenAgenda, cf. mapping-ficep.md
+        return "ficep"
+    return source
+
+
+def _merge_fields(con, cluster: list[dict]) -> int:
+    """Complète le survivant selon la priorité par champ. Retourne son id.
+
+    Ne touche jamais `url` : ni QFAP ni FICEP ne sont « le site du lieu »
+    (l'un scrape la Ville de Paris, l'autre agrège via OpenAgenda) — la règle
+    « l'url d'origine du lieu, jamais l'agrégateur » n'a pas encore de
+    candidat à qui s'appliquer.
     """
-    from db import _haversine_km
+    by_family: dict[str, dict] = {}
+    for r in cluster:
+        by_family.setdefault(_source_family(r["source"]), r)
+    anchor = by_family.get("qfap") or min(cluster, key=lambda r: r["id"])
 
-    buckets: dict[tuple[str, str], list[Event]] = defaultdict(list)
-    for e in events:
-        buckets[(_norm_title(e.title), e.start.date().isoformat())].append(e)
+    price = next((by_family[f]["price_type"] for f in _FIELD_PRIORITY["price_type"]
+                 if f in by_family and by_family[f]["price_type"] != "unknown"),
+                anchor["price_type"])
+    geo_row = next((by_family[f] for f in _FIELD_PRIORITY["geo"]
+                    if f in by_family and by_family[f]["lat"] is not None), None)
+    lat, lon = (geo_row["lat"], geo_row["lon"]) if geo_row else (anchor["lat"], anchor["lon"])
+    desc = next((by_family[f]["description"] for f in _FIELD_PRIORITY["description"]
+                if f in by_family and by_family[f]["description"]), anchor["description"])
 
-    kept: list[Event] = []
-    for group in buckets.values():
-        group.sort(key=lambda e: (e.lat is None, -len(e.description or "")))
-        clusters: list[Event] = []
-        for e in group:
-            dup = False
-            for c in clusters:
-                same_slot = abs((e.start - c.start).total_seconds()) < 3600
-                if not same_slot:
+    con.execute(
+        "UPDATE events SET price_type = ?, lat = ?, lon = ?, description = ? WHERE id = ?",
+        (price, lat, lon, desc, anchor["id"]),
+    )
+    return anchor["id"]
+
+
+def dedup_inter_source(con, *, now: datetime | None = None) -> dict[str, int]:
+    """Rapproche les enregistrements de sources différentes qui décrivent le
+    même événement. Trois passes (paquet de déploiement du 03/09) :
+
+      1. exacte — même (source, source_id) : déjà garanti par la contrainte
+         UNIQUE de la table, rien à faire ici.
+      2. forte  — titres similaires à ≥ 0.85, même créneau à ± 30 min, et
+         < 150 m (ou géoloc manquante d'un côté, auquel cas on ne peut pas
+         infirmer le rapprochement). Fusion de champs par priorité en plus
+         du lien : c'est la seule passe qui « fusionne », au sens du paquet.
+      3. faible — titres similaires à ≥ 0.92, même jour, même lieu normalisé.
+         Lien seulement, aucune fusion de champs — « à marquer plutôt qu'à
+         fusionner » : la confiance est plus faible, on ne réécrit rien.
+
+    Ne supprime jamais. Réinitialise `doublon_de` sur les événements à venir
+    avant de le recalculer entièrement à chaque cycle, pour qu'un changement
+    de priorité ou une source qui disparaît ne laisse pas de lien orphelin.
+    """
+    from db import _haversine_km, _iso
+
+    now = now or datetime.now(timezone.utc)
+    horizon = _iso(now - timedelta(days=1))
+    rows = [dict(r) for r in con.execute(
+        "SELECT id, source, source_id, title, start, lat, lon, venue, "
+        "description, price_type, url FROM events WHERE start >= ?",
+        (horizon,),
+    )]
+    con.execute("UPDATE events SET doublon_de = NULL WHERE start >= ?", (horizon,))
+
+    by_day: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        by_day[r["start"][:10]].append(r)
+
+    counts = {"forte": 0, "faible": 0}
+    for day_rows in by_day.values():
+        clusters: list[list[dict]] = []
+        kinds: list[str] = []
+        for r in day_rows:
+            placed = False
+            for idx, cluster in enumerate(clusters):
+                anchor = cluster[0]
+                if anchor["source"] == r["source"]:
+                    continue                       # même source : géré par UNIQUE
+                sim = _title_similarity(anchor["title"], r["title"])
+                if sim < 0.85:
                     continue
-                if e.lat is None or c.lat is None:
-                    dup = True
-                    break
-                d = _haversine_km(e.lat, e.lon, c.lat, c.lon)
-                if d is not None and d * 1000 <= max_distance_m:
-                    dup = True
-                    break
-            if not dup:
-                clusters.append(e)
-        kept.extend(clusters)
-    return kept
+                dt = abs((datetime.fromisoformat(anchor["start"])
+                         - datetime.fromisoformat(r["start"])).total_seconds())
+                forte = False
+                if sim >= 0.85 and dt <= 1800:
+                    if anchor["lat"] is None or r["lat"] is None:
+                        forte = True
+                    else:
+                        d = _haversine_km(anchor["lat"], anchor["lon"], r["lat"], r["lon"])
+                        forte = d is not None and d * 1000 <= 150
+                same_venue = (anchor["venue"] and r["venue"]
+                             and _norm_venue(anchor["venue"]) == _norm_venue(r["venue"]))
+                faible = sim >= 0.92 and same_venue
+                if not (forte or faible):
+                    continue
+                cluster.append(r)
+                if forte:
+                    kinds[idx] = "forte"
+                placed = True
+                break
+            if not placed:
+                clusters.append([r])
+                kinds.append("faible")   # cluster à un seul élément : sans effet
+
+        for cluster, kind in zip(clusters, kinds):
+            if len(cluster) < 2:
+                continue
+            counts[kind] += len(cluster) - 1
+            winner_id = _merge_fields(con, cluster) if kind == "forte" else min(r["id"] for r in cluster)
+            for r in cluster:
+                if r["id"] != winner_id:
+                    con.execute("UPDATE events SET doublon_de = ? WHERE id = ?", (winner_id, r["id"]))
+
+    return counts

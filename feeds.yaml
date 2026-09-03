@@ -1,24 +1,44 @@
 # Annuaire des sources de la couche 2 (flux municipaux, salles, lieux).
 #
-# PÉRIMÈTRE ACTUEL : PARIS INTRA-MUROS, SOURCE UNIQUE = QUE FAIRE À PARIS.
-# Ce fichier est volontairement vide de flux actifs. La boucle de refresh ne
-# charge que le connecteur QFAP (voir main.py, _build_fetchers).
+# PÉRIMÈTRE : PARIS INTRA-MUROS. QFAP reste la source de base (voir main.py,
+# _build_fetchers) ; ce fichier ajoute des flux ICS/OpenAgenda complémentaires.
 #
-# Il reste versionné parce que le sondage du 23/08 a une valeur : il documente
-# ce qui existe (ou pas) chez les sources de banlieue, au cas où le périmètre
-# s'élargirait un jour. Le détail complet est archivé dans docs/sources.md,
-# section « Sondage banlieue ».
+# Champs lus par le code (main.py::_build_fetchers) :
+#   url       : ce que le connecteur charge — clé d'upsert dans `feeds`
+#   type      : ics | rss | jsonld | openagenda | llm (seuls ics/openagenda
+#               sont câblés dans la boucle de refresh)
+#   name      : libellé humain, stocké en base
+#   enabled   : false = ignoré par la boucle de refresh (défaut : true)
+#   geo_bbox  : optionnel — {lat_min, lat_max, lon_min, lon_max}. Un flux qui
+#               déborde de son périmètre déclaré (ex. FICEP : quelques
+#               entrées à Arles, Bruxelles, Lyon) est filtré à l'ingestion
+#               plutôt que d'être cru sur parole.
 #
-# Champs :
-#   url       : ce que le connecteur charge
-#   type      : ics | rss | jsonld | openagenda | llm
-#   enabled   : false = ignoré par la boucle de refresh
-#   license   : licence constatée, ou unknown
-#   status    : ok | empty | no-feed | dns-error | cert-expired | needs-key
-#   checked   : date du dernier sondage
-#   note      : ce qu'il faut savoir
+# Champs documentaires seulement (ignorés par le code, gardés pour mémoire) :
+#   license, status, checked, note, attribution
 
-feeds: []
+feeds:
+  - url: "https://openagenda.com/agendas/61665301/events.v2.ics?relative[]=upcoming"
+    type: ics
+    name: "FICEP — instituts culturels étrangers de Paris"
+    enabled: true
+    license: "ouverte (documentation OpenAgenda)"
+    status: ok
+    checked: "2026-09-03"
+    attribution: "FICEP via OpenAgenda — licence ouverte"
+    # Vérifié en direct le 03/09/2026 : 149 VEVENT à venir, 149 lignes GEO:,
+    # aucune clé API. Sans `relative[]=upcoming`, le même export renvoie
+    # l'historique complet (836 VEVENT) — inutile ici.
+    note: >-
+      Boîte englobante Île-de-France large (marge sur les arrondissements
+      limitrophes) — le rayon de recherche de l'API (max 8 km depuis
+      Châtelet) fait le tri fin, ce filtre n'écarte que les entrées
+      manifestement hors région (Arles, Bruxelles, Lyon vus dans le flux).
+    geo_bbox:
+      lat_min: 48.60
+      lat_max: 49.05
+      lon_min: 2.05
+      lon_max: 2.65
 
 # --- Pistes Paris intra-muros si un jour QFAP ne suffit plus ----------------
 #
