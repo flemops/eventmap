@@ -121,9 +121,10 @@
     host.innerHTML = loaded.map((c) => {
       const lieu = c.events[0]?.culture?.lieu || "";
       const n = c.events.length;
-      // Option C (03/09/2026, décision de Hamdy) : la facette qualifie le
-      // LIEU, jamais l'événement — le libellé doit le dire, pas juste
-      // afficher le nom du pays comme si l'événement en relevait.
+      // Option C revue (03/09/2026, décision de Hamdy) : la facette qualifie
+      // le LIEU, jamais l'événement, mais le libellé du bouton n'affiche que
+      // le nom (ex. « Suède ») — c'est le sous-titre .lieu juste en dessous
+      // qui porte la nuance « lieu dédié à », pas le titre.
       return `<button class="cult${n ? "" : " vide"}" type="button" data-cle="${esc(c.cle)}" aria-expanded="false"${n ? "" : " disabled"}>
         <b>${esc(c.nom)}</b>
         <span class="lieu">${esc(lieu)}</span>
