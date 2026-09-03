@@ -298,6 +298,33 @@ Châtelet) qui fait le tri fin, pas ce filtre d'ingestion.
 
 ---
 
+## D17 — Cache-busting `?v=<hash>` sur `accueil.js`/`app.js` : Cloudflare sert du JS périmé malgré un déploiement propre
+
+**Contexte.** Trouvé le 03/09/2026 en vérifiant CE déploiement dans un vrai
+navigateur (pas seulement au curl, cf. la mise en garde du 02/09 sur la carte
+cassée) : après `git pull` + `systemctl restart`, `curl` sur l'origine
+montrait le nouveau contenu, mais le navigateur chargeait encore l'ancien
+`accueil.js`. Cause : `cf-cache-status: HIT`, `Cache-Control: public,
+max-age=14400` — Cloudflare sert son cache d'edge (4 h) pour les extensions
+statiques et ignore le `max-age=600` posé par nginx pour `location /`. Un
+restart de service ne purge rien côté CDN.
+
+**Décision.** `accueil.html`/`index.html` référencent leurs scripts propres
+avec un hash de contenu en query string (`accueil.js?v=<sha256 tronqué>`,
+même principe que `osint.css?v=…` côté portfolio) — jamais les vendor
+(`leaflet.js`/`leaflet.css`, qui ne changent pas). Une URL différente est une
+entrée de cache différente pour Cloudflare : pas besoin de purge, l'edge
+n'a jamais vu cette URL.
+
+**Conséquence.** Toute future modification de `accueil.js` ou `app.js` DOIT
+recalculer son hash (`sha256sum static/accueil.js`, 10 premiers caractères
+hex suffisent) et mettre à jour la query string dans le HTML correspondant —
+sinon le déploiement est invisible en navigateur jusqu'à 4 h malgré un
+`curl`/`/health` parfaitement verts. Oublier ce détail reproduit exactement
+le piège du 02/09 (page cassée sans erreur console visible, curl pourtant OK).
+
+---
+
 ## Backlog — hors périmètre, consigné pour ne pas l'oublier
 
 - **Élargissement hors Paris** : voir D13 et `docs/sources.md` § sondage
