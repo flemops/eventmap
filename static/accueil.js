@@ -56,6 +56,47 @@
     </a>`;
   }
 
+  /* ---- fiche de lieu ------------------------------------------------------
+     L'API renvoie la fiche du lieu dans chaque événement (culture.fiche).
+     On n'affiche que ce qui est réellement renseigné : tout champ encore marqué
+     « À VÉRIFIER », « À ÉCRIRE » ou « BROUILLON » est masqué plutôt que montré
+     au public. Une fiche à moitié écrite ne doit jamais fuir en production. */
+  const FICHE_LABELS = [
+    ["entree", "Entrée"],
+    ["horaires", "Horaires"],
+    ["reservation", "Réservation"],
+    ["acces", "Accès"],
+    ["ponctualite", "Ponctualité"],
+    ["langue", "Langue"],
+    ["photos", "Photos"],
+    ["tenue", "Tenue"],
+    ["venir_seul", "Venir seul"],
+    ["non_inities", "Sans rien y connaître"],
+    ["cadre", "Le lieu"],
+  ];
+
+  const NON_PUBLIABLE = /(À VÉRIFIER|A VERIFIER|À ÉCRIRE|A ECRIRE|BROUILLON)/i;
+  const utilisable = (v) => typeof v === "string" && v.trim() && !NON_PUBLIABLE.test(v);
+
+  // « Source : … » en fin de champ : conservé, mais en gris, c'est une preuve
+  // pas une phrase.
+  function valeurHTML(v) {
+    const i = v.indexOf("Source :");
+    if (i === -1) return esc(v);
+    return `${esc(v.slice(0, i).trim())} <span class="src">${esc(v.slice(i))}</span>`;
+  }
+
+  function ficheHTML(fiche) {
+    if (!fiche) return "";
+    const lignes = FICHE_LABELS
+      .filter(([k]) => utilisable(fiche[k]))
+      .map(([k, label]) => `<div><dt>${label}</dt><dd>${valeurHTML(fiche[k])}</dd></div>`)
+      .join("");
+    const intro = utilisable(fiche.pourquoi) ? `<p class="fiche-intro">${esc(fiche.pourquoi)}</p>` : "";
+    if (!intro && !lignes) return "";
+    return `<div class="fiche">${intro}${lignes ? `<dl>${lignes}</dl>` : ""}</div>`;
+  }
+
   /* ---- section cultures --------------------------------------------------- */
   async function initCultures() {
     const host = $("#cultures"), panel = $("#cult-panel");
@@ -97,9 +138,10 @@
       if (open) { panel.innerHTML = ""; return; }
       btn.setAttribute("aria-expanded", "true");
       const c = loaded.find((x) => x.cle === btn.dataset.cle);
+      const fiche = ficheHTML(c.events[0]?.culture?.fiche);
       panel.innerHTML = c.events.length
-        ? c.events.map(cardHTML).join("")
-        : `<div class="empty">Rien d'annoncé cette semaine pour cette culture.</div>`;
+        ? fiche + c.events.map(cardHTML).join("")
+        : fiche + `<div class="empty">Rien d'annoncé cette semaine pour cette culture.</div>`;
     });
   }
 
