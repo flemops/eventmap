@@ -125,7 +125,7 @@
       // LIEU, jamais l'événement — le libellé doit le dire, pas juste
       // afficher le nom du pays comme si l'événement en relevait.
       return `<button class="cult${n ? "" : " vide"}" type="button" data-cle="${esc(c.cle)}" aria-expanded="false"${n ? "" : " disabled"}>
-        <b>Lieux dédiés à la culture ${esc(c.nom)}</b>
+        <b>${esc(c.nom)}</b>
         <span class="lieu">${esc(lieu)}</span>
         <span class="n">${n} à venir</span>
       </button>`;
