@@ -121,6 +121,23 @@ body {
 
 footer { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 12px; font-size: 11px; color: var(--muted); }
 footer a { color: inherit; }
+
+/* ---- fiche de lieu ------------------------------------------------------ */
+.fiche {
+  background: var(--panel); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: var(--radius);
+  padding: 13px 15px; margin-bottom: 4px;
+}
+.fiche-intro { margin: 0 0 12px; font-size: 14.5px; line-height: 1.5; }
+.fiche dl { margin: 0; display: grid; gap: 9px; }
+.fiche dl > div { display: grid; grid-template-columns: 128px 1fr; gap: 4px 12px; }
+@media (max-width: 560px) { .fiche dl > div { grid-template-columns: 1fr; gap: 2px; } }
+.fiche dt {
+  font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--accent);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; padding-top: 2px;
+}
+.fiche dd { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--text); }
+.fiche dd .src { color: var(--muted); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -166,6 +183,6 @@ footer a { color: inherit; }
 
 </div>
 <script src="/static/vendor/leaflet/leaflet.js"></script>
-<script src="/static/accueil.js?v=65f1e4f5c2" defer></script>
+<script src="/static/accueil.js?v=ec4c46b47a" defer></script>
 </body>
 </html>
