@@ -1,8 +1,5 @@
 (() => {
-  const CATEGORY_LABELS = {
-    music: "Musique", theatre: "Spectacle", cinema: "Cinéma", expo: "Expo", kids: "Enfants",
-    workshop: "Atelier", talk: "Rencontre", sport: "Sport", market: "Marché / festival", other: "Autre",
-  };
+  const { CATEGORY_LABELS, esc, fmtTime, fmtDay, PRICE_LABEL: priceLabel } = window.EM_COMMON;
   // Châtelet par défaut : le centre est remplacé par la géoloc si l'utilisateur
   // l'accepte. Rien n'est jamais stocké : ni position, ni préférence.
   const state = { lat: 48.8584, lon: 2.3470, when: "today", radius: 2, price: "free", category: "", located: false };
@@ -24,11 +21,6 @@
     me = L.marker([state.lat, state.lon], { icon: L.divIcon({ className: "me", iconSize: [14, 14] }), interactive: false }).addTo(map);
     circle = L.circle([state.lat, state.lon], { radius: state.radius * 1000, color: "#ef3d6e", weight: 1, fillOpacity: 0.05, interactive: false }).addTo(map);
   }
-
-  const fmtTime = (iso) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
-  const fmtDay = (iso) => new Date(iso).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", timeZone: "Europe/Paris" });
-  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const priceLabel = { free: "Gratuit", paid: "Payant", free_conditional: "Gratuit*", unknown: "" };
 
   function render(data, fit) {
     markers.clearLayers();
