@@ -6,28 +6,13 @@
 <meta name="robots" content="noindex">
 <title>Ce soir — EventMap</title>
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="/static/common.css">
 <style>
-:root {
-  --bg: #12131f; --panel: #1b1d2e; --chip-bg: #20223a; --line: #2b2e45; --text: #eef0fa; --muted: #8b8fae;
-  --accent: #ef3d6e; --accent-glow: rgba(239,61,110,.35); --free: #4fd694; --paid: #f0a93c;
-  --radius: 12px; --safe-b: env(safe-area-inset-bottom, 0px);
-}
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f7f4ee; --panel: #fff; --chip-bg: #f0ece1; --line: #e6e0d2; --text: #1c1b22; --muted: #6b6577;
-    --accent: #c81155; --accent-glow: rgba(200,17,85,.2); --free: #1f8a5c; --paid: #a8650f;
-  }
-}
-* { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
   background: var(--bg); color: var(--text);
   font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   display: flex; flex-direction: column; -webkit-font-smoothing: antialiased;
-}
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }
 }
 
 /* ---- barre de filtres : compacte, tout au pouce --------------------- */
@@ -37,12 +22,6 @@ header {
 }
 .row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .row::-webkit-scrollbar { display: none; }
-.chip {
-  flex: none; padding: 7px 13px; border-radius: 10px; border: 1px solid var(--line);
-  background: var(--chip-bg); color: var(--text); font: inherit; font-size: 14px; cursor: pointer;
-  white-space: nowrap; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
-}
-.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 0 0 4px var(--accent-glow); }
 .status { font-size: 13px; color: var(--muted); min-height: 1.2em; }
 .status strong { color: var(--text); }
 
@@ -64,19 +43,6 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   transition: border-color .15s ease, background .15s ease;
 }
 .ev:hover, .ev.active { border-left-color: var(--accent); background: color-mix(in srgb, var(--panel) 92%, var(--accent) 8%); }
-.when {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  background: var(--chip-bg); border-radius: 8px; padding: 6px 2px;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-}
-.when b { font-size: 16px; font-weight: 700; letter-spacing: .02em; line-height: 1; }
-.when small { color: var(--muted); font-size: 10px; margin-top: 3px; text-transform: uppercase; letter-spacing: .04em; }
-.ev h3 { margin: 0 0 3px; font-size: 15px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.meta { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
-.price { font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
-.price::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
-.price.free { color: var(--free); }
-.price.paid { color: var(--paid); }
 .empty { text-align: center; color: var(--muted); padding: 40px 20px; }
 .empty b { display: block; color: var(--text); font-size: 18px; margin-bottom: 6px; }
 
@@ -87,7 +53,6 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .leaflet-container { font: inherit; }
 .me { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; box-shadow: 0 0 0 2px var(--accent); }
 footer { font-size: 11px; color: var(--muted); padding: 6px 12px calc(6px + var(--safe-b)); border-top: 1px solid var(--line); background: var(--panel); }
-footer a { color: inherit; }
 </style>
 </head>
 <body>
@@ -121,6 +86,7 @@ footer a { color: inherit; }
 <footer>Sources : <a href="https://opendata.paris.fr/explore/dataset/que-faire-a-paris-/" rel="noopener">Que faire à Paris — Ville de Paris (ODbL)</a> · <a href="https://openagenda.com/agendas/61665301" rel="noopener">FICEP via OpenAgenda (licence ouverte)</a>. Cartes © <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a>.</footer>
 
 <script src="/static/vendor/leaflet/leaflet.js"></script>
+<script src="/static/common.js"></script>
 <script src="/static/app.js?v=7aff6bf398"></script>
 </body>
 </html>
