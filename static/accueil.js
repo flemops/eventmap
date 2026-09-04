@@ -2,18 +2,11 @@
    Range les événements par culture d'origine puis par catégorie, et propose une
    vignette de carte qui renvoie vers /carte. Aucune donnée n'est stockée. */
 (() => {
-  const CATEGORY_LABELS = {
-    music: "Musique", theatre: "Spectacle", cinema: "Cinéma", expo: "Expo", kids: "Enfants",
-    workshop: "Atelier", talk: "Rencontre", sport: "Sport", market: "Marché / festival", other: "Autre",
-  };
+  const { CATEGORY_LABELS, esc, fmtTime, fmtDay, PRICE_LABEL } = window.EM_COMMON;
   // Châtelet, rayon large : l'accueil montre tout Paris, pas les environs de l'utilisateur.
   const CENTER = { lat: 48.8584, lon: 2.3470, radius: 8, when: "week" };
-  const PRICE_LABEL = { free: "Gratuit", paid: "Payant", free_conditional: "Gratuit*", unknown: "" };
 
   const $ = (s) => document.querySelector(s);
-  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const fmtTime = (iso) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
-  const fmtDay = (iso) => new Date(iso).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", timeZone: "Europe/Paris" });
 
   async function loadEvents(extra = {}) {
     const q = new URLSearchParams({ lat: CENTER.lat, lon: CENTER.lon, radius: CENTER.radius, when: CENTER.when, ...extra });
