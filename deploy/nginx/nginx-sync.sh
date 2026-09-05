@@ -160,23 +160,42 @@ done
 restaurer() {
   echo "==> RESTAURATION de l'etat precedent" >&2
   set +e
+  local restauration_ok=1
 
   # Ordre inverse de l'installation : le fichier de site d'abord, les snippets
   # ensuite, pour ne jamais laisser un include pointer vers un fichier disparu.
   for ((i = ${#dsts[@]} - 1; i >= 0; i--)); do
     if [[ "${existait[$i]}" -eq 1 ]]; then
-      cp -a "${baks[$i]}" "${dsts[$i]}" \
-        || echo "==> ALERTE : restauration de ${dsts[$i]} IMPOSSIBLE (copie dans ${baks[$i]})" >&2
+      cp -a "${baks[$i]}" "${dsts[$i]}" || {
+        echo "==> ALERTE : restauration de ${dsts[$i]} IMPOSSIBLE (copie dans ${baks[$i]})" >&2
+        restauration_ok=0
+      }
     else
-      rm -f "${dsts[$i]}"
+      rm -f "${dsts[$i]}" || restauration_ok=0
     fi
   done
 
   if [[ "$LIEN_EXISTAIT" -eq 0 ]]; then
-    rm -f "$LIEN"
+    rm -f "$LIEN" || restauration_ok=0
   elif [[ -n "$LIEN_CIBLE" ]]; then
-    ln -sfn "$LIEN_CIBLE" "$LIEN" \
-      || echo "==> ALERTE : impossible de refaire pointer $LIEN vers $LIEN_CIBLE" >&2
+    ln -sfn "$LIEN_CIBLE" "$LIEN" || {
+      echo "==> ALERTE : impossible de refaire pointer $LIEN vers $LIEN_CIBLE" >&2
+      restauration_ok=0
+    }
+  fi
+
+  # Les sauvegardes ne survivent qu'a une restauration incomplete. Quand tout
+  # est revenu en place, elles sont l'exact doublon des fichiers restaures :
+  # les garder ferait s'accumuler un .bak par echec dans /etc/nginx, sans que
+  # personne ne les relise jamais. En revanche, si une copie a echoue, la
+  # sauvegarde est le SEUL exemplaire restant : on n'y touche pas.
+  if [[ "$restauration_ok" -eq 1 ]]; then
+    for i in "${!baks[@]}"; do
+      [[ "${existait[$i]}" -eq 1 ]] && rm -f "${baks[$i]}"
+    done
+  else
+    echo "==> Restauration incomplete : les sauvegardes .bak-${STAMP}-nginx-sync" >&2
+    echo "    sont CONSERVEES, ce sont peut-etre les seuls exemplaires." >&2
   fi
 
   if nginx -t; then
