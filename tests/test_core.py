@@ -412,31 +412,52 @@ def test_culture_cle_ignore_les_mots_cles_d_exclusion(monkeypatch):
     assert recus == [(("Goethe-Institut",), {})]
 
 
-def test_route_api_events_de_bout_en_bout(tmp_path, monkeypatch):
-    """Le seul test qui traverse la route HTTP : parametre de requete -> filtre
-    SQL -> corps de la reponse. Les tests ci-dessus couvrent les deux fonctions
-    extraites, pas leur cablage dans `api_events` — une erreur de branchement
-    (mauvais argument, appel oublie) leur echapperait entierement.
+# ------------------------------------------------------------ routes HTTP
+#
+# Les tests ci-dessus portent sur des fonctions ; ceux-ci traversent les vraies
+# routes. Un cablage errone (mauvais argument, appel oublie) n'est visible que
+# d'ici. `/api/refresh` n'est volontairement pas teste : il declenche une
+# collecte reseau reelle, et nginx ne l'expose pas.
 
-    `TestClient` est instancie SANS `with` : le lifespan n'est alors pas joue,
-    donc la boucle de rafraichissement des sources ne demarre pas.
 
-    La route est servie dans un autre thread que le test, et une connexion
-    SQLite n'est utilisable que dans le sien : on ne peut donc pas reutiliser la
-    fixture `con`. `db.session` est redirigee vers un fichier temporaire et
-    rouvre une connexion a chaque requete — ce que fait deja la prod.
+@pytest.fixture
+def base_temp(tmp_path, monkeypatch):
+    """Redirige `db.session` vers une base temporaire vide.
+
+    Une route est servie dans un autre thread que le test, et une connexion
+    SQLite n'est utilisable que dans le sien : la fixture `con` provoque un
+    `ProgrammingError`. On rouvre donc une connexion par requete, sur un
+    fichier — ce que fait deja la prod.
     """
+    chemin = str(tmp_path / "route.db")
+    db.connect(chemin).close()  # cree le schema
+    vraie_session = db.session
+    monkeypatch.setattr(db, "session", lambda *a, **k: vraie_session(chemin))
+    return chemin
+
+
+@pytest.fixture
+def client(base_temp):
+    """`TestClient` instancie SANS `with` : le lifespan n'est alors pas joue,
+    donc la boucle de rafraichissement des sources ne demarre pas pendant les
+    tests. Ne pas « corriger » en context manager."""
     from fastapi.testclient import TestClient
 
+    return TestClient(main.app)
+
+
+def test_route_api_events_de_bout_en_bout(client, base_temp, monkeypatch):
+    """Du parametre de requete au corps de la reponse. Les tests des deux
+    fonctions extraites ne couvrent pas leur cablage dans `api_events` : une
+    erreur de branchement leur echapperait entierement."""
     lieux = {"japon": ["MCJP"], "suede": ["Institut suedois"]}
     par_lieu = {lieu: cle for cle, ls in lieux.items() for lieu in ls}
     monkeypatch.setattr(cultures, "venues_for", lambda cle: list(lieux.get(cle, [])))
     monkeypatch.setattr(cultures, "for_venue",
                         lambda v, *a, **k: ({"cle": par_lieu[v]} if v in par_lieu else None))
 
-    chemin = str(tmp_path / "route.db")
     t = datetime.now(timezone.utc) + timedelta(hours=2)
-    amorce = db.connect(chemin)
+    amorce = db.connect(base_temp)
     db.upsert_events(amorce, [
         _ev("Sumo", t, venue="MCJP"),
         _ev("Fika", t, lat=48.861, lon=2.351, venue="Institut suedois"),
@@ -445,10 +466,6 @@ def test_route_api_events_de_bout_en_bout(tmp_path, monkeypatch):
     amorce.commit()
     amorce.close()
 
-    vraie_session = db.session
-    monkeypatch.setattr(db, "session", lambda *a, **k: vraie_session(chemin))
-
-    client = TestClient(main.app)
     base = {"lat": 48.86, "lon": 2.35, "radius": 2, "when": "week"}
 
     # Deux cultures en un appel : le lieu hors taxonomie est bien ecarte, et
@@ -477,3 +494,89 @@ def test_route_api_events_de_bout_en_bout(tmp_path, monkeypatch):
     assert client.get("/api/events", params={**base, "culture": "klingon"}).status_code == 404
     assert client.get("/api/events", params={**base, "culture": "japon,klingon"}).status_code == 404
     assert client.get("/api/events", params={**base, "culture": ","}).status_code == 404
+
+
+@pytest.mark.parametrize("chemin", ["/", "/carte"])
+def test_pages_publiques_repondent_au_get_et_au_head(chemin, client):
+    """HEAD rendait 405 (`allow: GET`) avant le 05/09/2026. Plusieurs
+    verificateurs de liens et deplieurs d'URL l'envoient avant le GET : une page
+    joignable se declarait inaccessible a qui demandait poliment d'abord."""
+    r = client.get(chemin)
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    assert client.head(chemin).status_code == 200
+
+
+@pytest.mark.parametrize("chemin", ["/", "/carte"])
+def test_pages_publiques_sont_indexables_et_partageables(chemin, client):
+    """Non-regression du 05/09/2026 : un `<meta robots noindex>` datant du
+    developpement etait servi en prod depuis le 23/08 sur les DEUX pages, et
+    aucune n'avait de description ni de balises de partage. Les depliages de
+    lien lisent `og:` et jamais le corps de la page."""
+    html = client.get(chemin).text
+    assert "noindex" not in html
+    assert '<meta name="description"' in html
+    assert f'rel="canonical" href="{main.SITE}{chemin}"' in html
+    assert 'property="og:title"' in html
+    assert 'name="twitter:card"' in html
+
+
+def test_sitemap_liste_les_deux_pages(client):
+    """Rendait 404 avant le 05/09/2026. Il ne peut pas etre annonce par un
+    robots.txt : Cloudflare sert le sien a l'edge et l'origine n'est jamais
+    consultee — il se declare dans la Search Console."""
+    r = client.get("/sitemap.xml")
+    assert r.status_code == 200
+    assert "xml" in r.headers["content-type"]
+    assert r.text.count("<loc>") == 2
+    assert f"<loc>{main.SITE}/</loc>" in r.text
+    assert f"<loc>{main.SITE}/carte</loc>" in r.text
+
+
+def test_health_decrit_une_base_vide_sans_echouer(client):
+    """Forme du corps, sur une base vide : `/health` ne doit pas casser faute de
+    donnees. La garantie sur le code HTTP en etat degrade est testee juste
+    en dessous — ici le service n'est PAS degrade, donc ce test ne prouve rien
+    a ce sujet (verifie par mutation le 05/09/2026)."""
+    r = client.get("/health")
+    assert r.status_code == 200
+    corps = r.json()
+    assert corps["status"] == "ok"
+    assert corps["db"]["total"] == 0
+    assert {"feeds", "refresh", "cultures", "silent_sources"} <= set(corps)
+
+
+def test_health_rend_200_meme_en_etat_degrade(client, monkeypatch):
+    """La garantie qui compte pour la sonde d'Uptime Kuma : meme degrade, le
+    code HTTP reste 200 et l'etat passe par le champ `status`. Rendre 503 ici
+    declencherait une alerte de disponibilite pour un probleme de donnees —
+    le service, lui, repond parfaitement."""
+    monkeypatch.setattr(db, "silent_sources", lambda *a, **k: ["qfap"])
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert r.json()["status"] == "degraded"
+    assert r.json()["silent_sources"] == ["qfap"]
+
+
+def test_api_cultures_et_categories_gardent_leur_forme(client):
+    """Contrat consomme par accueil.js et app.js. On verifie la FORME, pas le
+    contenu : le nombre de cultures depend de cultures.yaml, qui est editorial
+    et bouge — un test qui compterait 14 casserait a la prochaine ajout."""
+    cults = client.get("/api/cultures").json()["cultures"]
+    assert cults and all({"cle", "nom", "lieux"} <= set(c) for c in cults)
+    cats = client.get("/api/categories").json()["categories"]
+    assert "other" in cats and len(cats) > 1
+
+
+@pytest.mark.parametrize("params", [
+    {"radius": -1},        # gt=0
+    {"radius": 999},       # le=MAX_RADIUS_KM
+    {"when": "hier"},      # pattern
+    {"limit": 9999},       # le=300
+    {"lat": 91},           # le=90
+    {"price": "offert"},   # pattern
+])
+def test_parametres_invalides_sont_refuses_avant_la_base(params, client):
+    """Ces bornes sont la seule validation d'entree du service : elles doivent
+    rendre 422 sans jamais atteindre SQLite."""
+    assert client.get("/api/events", params=params).status_code == 422
