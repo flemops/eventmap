@@ -59,11 +59,28 @@ cp -a "$DEPOT/." "$REPO/"
 cat > "$STUB/nginx" <<'EOF'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "-t" ]]; then
-  if [[ "${STUB_NGINX_T:-ok}" == "ko" ]]; then
-    echo "nginx: [emerg] bouchon : echec simule de nginx -t" >&2
-    echo "nginx: configuration file test failed" >&2
-    exit 1
-  fi
+  case "${STUB_NGINX_T:-ok}" in
+    ko)
+      echo "nginx: [emerg] bouchon : echec simule de nginx -t" >&2
+      echo "nginx: configuration file test failed" >&2
+      exit 1 ;;
+    ko_verrou)
+      # Point d'accroche : le script appelle `nginx -t` JUSTE APRES
+      # l'installation et JUSTE AVANT la restauration. On profite de cet
+      # instant pour rendre la cible non reinscriptible, puis on echoue.
+      # La restauration bute alors sur un `cp` impossible — le seul chemin
+      # ou le script doit CONSERVER sa sauvegarde au lieu de l'effacer.
+      if [[ ! -f "$RACINE_BANC/.verrou-pose" ]]; then
+        : > "$RACINE_BANC/.verrou-pose"
+        chattr +i "$VERROU_CIBLE" 2>/dev/null \
+          || echo "bouchon : chattr +i a echoue sur $VERROU_CIBLE" >&2
+        echo "nginx: [emerg] bouchon : echec simule, cible verrouillee" >&2
+        exit 1
+      fi
+      # Appels suivants (celui de la restauration) : on laisse passer.
+      echo "nginx: configuration file /etc/nginx/nginx.conf test is successful"
+      exit 0 ;;
+  esac
   echo "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok"
   echo "nginx: configuration file /etc/nginx/nginx.conf test is successful"
   exit 0
@@ -110,8 +127,12 @@ export RACINE_BANC="$RACINE"
 # ------------------------------------------------------------------ scenario
 scenario() { # $1 nom, $2 etat, $3.. VAR=val
   local nom=$1 etat=$2; shift 2
+  # Le drapeau immuable pose par le scenario de verrouillage survit au
+  # namespace : il porte sur l'inode reel, sous /tmp. A retirer avant de
+  # pouvoir effacer la copie de travail.
+  [[ -d "$TRAVAIL" ]] && chattr -R -i "$TRAVAIL" 2>/dev/null
   rm -rf "$TRAVAIL"; cp -a "$REF" "$TRAVAIL"
-  rm -f "$RACINE/.reload-vu"
+  rm -f "$RACINE/.reload-vu" "$RACINE/.verrou-pose"
   env NOM="$nom" ETAT="$etat" RACINE="$RACINE" RACINE_BANC="$RACINE" \
       "$@" unshare -m bash "$INNER"
 }
@@ -181,6 +202,53 @@ scenario t3_curl000_B B STUB_CODE=000 STUB_CSP=0 ; verdict t3_curl000_B 1 oui ||
 echo "-- Declencheur 4 : l'installation echoue en cours de route --"
 scenario t4_install_D D STUB_NGINX_T=ok ; verdict t4_install_D 1 oui || echec=1
 
+echo "-- Declencheur 5 : la RESTAURATION elle-meme echoue --"
+# Le seul chemin ou le script doit CONSERVER sa sauvegarde. La cible est rendue
+# immuable entre l'installation et la restauration, par le bouchon `nginx -t`.
+verdict_alerte() { # $1 nom
+  local nom=$1 ok=1 notes=()
+  local code; code=$(cat "$RES/$nom.code" 2>/dev/null || echo "?")
+  [[ "$code" == "1" ]] || { ok=0; notes+=("code $code au lieu de 1"); }
+
+  grep -q "chattr +i a echoue" "$RES/$nom.log" 2>/dev/null \
+    && { ok=0; notes+=("le verrou n'a pas pu etre pose : scenario invalide"); }
+  grep -q "restauration de .* IMPOSSIBLE" "$RES/$nom.log" 2>/dev/null \
+    && notes+=("echec de copie signale") \
+    || { ok=0; notes+=("l'echec de copie n'est PAS signale"); }
+  grep -q "CONSERVEES" "$RES/$nom.log" 2>/dev/null \
+    && notes+=("sauvegardes annoncees conservees") \
+    || { ok=0; notes+=("rien ne dit que les sauvegardes sont conservees"); }
+  grep -q "ETAT D'ORIGINE NON RETABLI" "$RES/$nom.log" 2>/dev/null \
+    && notes+=("verdict final explicite") \
+    || { ok=0; notes+=("pas de verdict final disant que l'etat n'est pas retabli"); }
+
+  # La sauvegarde doit exister encore : c'est le seul exemplaire restant.
+  if [[ "$(awk '/^RESIDUS_bak/{print $2}' "$RES/$nom.apres")" -gt \
+        "$(awk '/^RESIDUS_bak/{print $2}' "$RES/$nom.avant")" ]]; then
+    notes+=("sauvegarde effectivement conservee sur le disque")
+  else
+    ok=0; notes+=("SAUVEGARDE PERDUE alors que la restauration a echoue")
+  fi
+
+  # Et surtout : ne pas annoncer un retour a la normale qui n'a pas eu lieu.
+  # C'est la ligne que l'operateur lit ; elle doit dire la verite.
+  if grep -qiE "etat d'origine retabli|rechargé dans son etat d'origine" \
+       "$RES/$nom.log" 2>/dev/null; then
+    ok=0; notes+=("MESSAGE TROMPEUR : annonce l'etat d'origine alors que la restauration a echoue")
+  else
+    notes+=("aucun faux message de retour a la normale")
+  fi
+
+  if [[ $ok -eq 1 ]]; then vert "  PASS  $nom  — ${notes[*]}"
+  else
+    rouge "  FAIL  $nom  — ${notes[*]}"
+    echo "  ---- log ----"; sed 's/^/    /' "$RES/$nom.log" 2>&1 | tail -20
+  fi
+  return $((1 - ok))
+}
+
+scenario t5_verrou_A A STUB_NGINX_T=ko_verrou ; verdict_alerte t5_verrou_A || echec=1
+
 echo "-- Temoin : un apply qui reussit (le banc doit savoir dire oui) --"
 scenario t0_succes_A A STUB_NGINX_T=ok ; verdict t0_succes_A 0 non || echec=1
 
@@ -230,6 +298,7 @@ else
 fi
 /usr/sbin/nginx -t 2>&1 | tail -1
 
+chattr -R -i "$TRAVAIL" 2>/dev/null
 rm -rf "$RACINE"
 echo
 [[ $echec -eq 0 ]] && vert "=== TOUS LES SCENARIOS PASSENT ===" || rouge "=== AU MOINS UN SCENARIO ECHOUE ==="

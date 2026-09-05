@@ -25,6 +25,11 @@ LIEN="/etc/nginx/sites-enabled/$SITE"
 DESTS=()
 for p in "${FICHIERS[@]}"; do DESTS+=("${p#*|}"); done
 
+# Cible que le bouchon `nginx -t` rendra immuable, pour le scenario qui fait
+# echouer la restauration elle-meme. Le fichier de site : c'est celui dont une
+# sauvegarde existe, donc le seul ou `cp -a` sera tente au retour en arriere.
+export VERROU_CIBLE="$SITE_CONF"
+
 empreinte() {
   local sortie=$1 f
   {

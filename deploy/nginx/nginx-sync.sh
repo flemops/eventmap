@@ -184,32 +184,41 @@ restaurer() {
     }
   fi
 
-  # Les sauvegardes ne survivent qu'a une restauration incomplete. Quand tout
-  # est revenu en place, elles sont l'exact doublon des fichiers restaures :
-  # les garder ferait s'accumuler un .bak par echec dans /etc/nginx, sans que
-  # personne ne les relise jamais. En revanche, si une copie a echoue, la
-  # sauvegarde est le SEUL exemplaire restant : on n'y touche pas.
+  local recharge_ok=0
+  if nginx -t; then
+    if systemctl reload nginx; then
+      recharge_ok=1
+    else
+      echo "==> ALERTE : le rechargement de nginx a echoue." >&2
+      echo "    nginx tourne encore sur sa config en memoire ; comprendre pourquoi" >&2
+      echo "    avant tout redemarrage (systemctl status nginx)." >&2
+    fi
+  else
+    echo "==> ALERTE : la configuration en place ne passe pas nginx -t." >&2
+    echo "    nginx tourne encore sur sa config en memoire ; NE PAS le redemarrer" >&2
+    echo "    avant d'avoir corrige $SITE_CONF a la main." >&2
+  fi
+
+  # Le mot de la fin doit dire la verite : c'est la ligne que l'operateur lit.
+  # Annoncer un retour a la normale apres une restauration ratee est le pire
+  # des deux mondes — l'echec est signale plus haut, mais noye.
+  #
+  # Les sauvegardes, elles, ne survivent qu'a une restauration incomplete :
+  # quand tout est revenu en place, elles sont l'exact doublon des fichiers
+  # restaures et un .bak s'accumulerait par echec. Si une copie a echoue, en
+  # revanche, la sauvegarde est le SEUL exemplaire restant : on n'y touche pas.
   if [[ "$restauration_ok" -eq 1 ]]; then
     for i in "${!baks[@]}"; do
       [[ "${existait[$i]}" -eq 1 ]] && rm -f "${baks[$i]}"
     done
-  else
-    echo "==> Restauration incomplete : les sauvegardes .bak-${STAMP}-nginx-sync" >&2
-    echo "    sont CONSERVEES, ce sont peut-etre les seuls exemplaires." >&2
-  fi
-
-  if nginx -t; then
-    if systemctl reload nginx; then
-      echo "==> nginx rechargé dans son etat d'origine." >&2
-    else
-      echo "==> ALERTE : la config d'origine est en place mais le rechargement a echoue." >&2
-      echo "    nginx tourne encore sur sa config en memoire. Ne pas le redemarrer" >&2
-      echo "    avant d'avoir compris pourquoi (systemctl status nginx)." >&2
+    if [[ "$recharge_ok" -eq 1 ]]; then
+      echo "==> Etat d'origine retabli et nginx recharge." >&2
     fi
   else
-    echo "==> ALERTE : la configuration restauree ne passe pas nginx -t." >&2
-    echo "    nginx tourne encore sur sa config en memoire ; NE PAS le redemarrer" >&2
-    echo "    avant d'avoir corrige $SITE_CONF a la main." >&2
+    echo "==> ETAT D'ORIGINE NON RETABLI — voir les ALERTES ci-dessus." >&2
+    echo "    Les sauvegardes .bak-${STAMP}-nginx-sync sont CONSERVEES : ce sont" >&2
+    echo "    peut-etre les seuls exemplaires. Reprendre a la main avant tout" >&2
+    echo "    redemarrage de nginx." >&2
   fi
 
   set -e
