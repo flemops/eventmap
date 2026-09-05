@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import cultures
@@ -317,14 +317,38 @@ async def api_refresh():
     return {"sources": [{"name": r.name, "ok": r.ok, "events": len(r.events), "error": r.error} for r in results]}
 
 
-@app.get("/")
+SITE = "https://eventmap.hamdy-tabsissi.com"
+
+# GET *et* HEAD : plusieurs vérificateurs de liens et déplieurs d'URL envoient un
+# HEAD avant le GET, et FastAPI répondait 405 (`allow: GET`) — une page joignable
+# qui se déclare inaccessible à toute machine qui demande poliment d'abord.
+@app.api_route("/", methods=["GET", "HEAD"])
 def index():
     return FileResponse(STATIC_DIR / "accueil.html")
 
 
-@app.get("/carte")
+@app.api_route("/carte", methods=["GET", "HEAD"])
 def carte():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/sitemap.xml")
+def sitemap():
+    """Les deux seules URL du site.
+
+    Le sitemap ne peut pas être annoncé par un `robots.txt` : Cloudflare sert son
+    propre fichier « content signals » à l'edge et l'origine n'est jamais consultée
+    (vérifié le 05/09/2026 : `curl 127.0.0.1:8000/robots.txt` → 404, l'edge → 200).
+    Il faut donc le déclarer dans la Search Console, ou éditer le robots.txt géré
+    depuis le tableau de bord Cloudflare.
+    """
+    urls = "".join(f"<url><loc>{SITE}{p}</loc><changefreq>daily</changefreq></url>"
+                   for p in ("/", "/carte"))
+    return Response(
+        content=f'<?xml version="1.0" encoding="UTF-8"?>'
+                f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>',
+        media_type="application/xml",
+    )
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
