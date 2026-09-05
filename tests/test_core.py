@@ -410,3 +410,70 @@ def test_culture_cle_ignore_les_mots_cles_d_exclusion(monkeypatch):
     main._ajoute_culture_cle(rows, ["allemagne", "japon"])
     assert rows[0]["culture_cle"] == "allemagne"
     assert recus == [(("Goethe-Institut",), {})]
+
+
+def test_route_api_events_de_bout_en_bout(tmp_path, monkeypatch):
+    """Le seul test qui traverse la route HTTP : parametre de requete -> filtre
+    SQL -> corps de la reponse. Les tests ci-dessus couvrent les deux fonctions
+    extraites, pas leur cablage dans `api_events` — une erreur de branchement
+    (mauvais argument, appel oublie) leur echapperait entierement.
+
+    `TestClient` est instancie SANS `with` : le lifespan n'est alors pas joue,
+    donc la boucle de rafraichissement des sources ne demarre pas.
+
+    La route est servie dans un autre thread que le test, et une connexion
+    SQLite n'est utilisable que dans le sien : on ne peut donc pas reutiliser la
+    fixture `con`. `db.session` est redirigee vers un fichier temporaire et
+    rouvre une connexion a chaque requete — ce que fait deja la prod.
+    """
+    from fastapi.testclient import TestClient
+
+    lieux = {"japon": ["MCJP"], "suede": ["Institut suedois"]}
+    par_lieu = {lieu: cle for cle, ls in lieux.items() for lieu in ls}
+    monkeypatch.setattr(cultures, "venues_for", lambda cle: list(lieux.get(cle, [])))
+    monkeypatch.setattr(cultures, "for_venue",
+                        lambda v, *a, **k: ({"cle": par_lieu[v]} if v in par_lieu else None))
+
+    chemin = str(tmp_path / "route.db")
+    t = datetime.now(timezone.utc) + timedelta(hours=2)
+    amorce = db.connect(chemin)
+    db.upsert_events(amorce, [
+        _ev("Sumo", t, venue="MCJP"),
+        _ev("Fika", t, lat=48.861, lon=2.351, venue="Institut suedois"),
+        _ev("Ailleurs", t, lat=48.862, lon=2.352, venue="Le Zénith"),
+    ])
+    amorce.commit()
+    amorce.close()
+
+    vraie_session = db.session
+    monkeypatch.setattr(db, "session", lambda *a, **k: vraie_session(chemin))
+
+    client = TestClient(main.app)
+    base = {"lat": 48.86, "lon": 2.35, "radius": 2, "when": "week"}
+
+    # Deux cultures en un appel : le lieu hors taxonomie est bien ecarte, et
+    # chaque evenement porte la cle du lieu par lequel il est entre.
+    r = client.get("/api/events", params={**base, "culture": "japon,suede"})
+    assert r.status_code == 200
+    corps = r.json()
+    assert corps["count"] == 2
+    assert {e["title"]: e["culture_cle"] for e in corps["events"]} == {
+        "Sumo": "japon", "Fika": "suede",
+    }
+
+    # Une seule cle : reponse d'avant le multi-cles, aucun champ ajoute.
+    r = client.get("/api/events", params={**base, "culture": "japon"})
+    assert r.status_code == 200
+    events = r.json()["events"]
+    assert [e["title"] for e in events] == ["Sumo"]
+    assert "culture_cle" not in events[0]
+
+    # Sans filtre de culture : les trois evenements, toujours sans champ ajoute.
+    r = client.get("/api/events", params=base)
+    assert r.json()["count"] == 3
+    assert all("culture_cle" not in e for e in r.json()["events"])
+
+    # Les deux 404 traversent bien le gestionnaire d'exception de FastAPI.
+    assert client.get("/api/events", params={**base, "culture": "klingon"}).status_code == 404
+    assert client.get("/api/events", params={**base, "culture": "japon,klingon"}).status_code == 404
+    assert client.get("/api/events", params={**base, "culture": ","}).status_code == 404
