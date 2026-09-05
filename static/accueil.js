@@ -35,7 +35,7 @@
     const price = PRICE_LABEL[e.price_type] || "";
     const cat = CATEGORY_LABELS[e.category] || "";
     const dates = e.dates > 1 ? `<span class="dates">+${e.dates - 1} date${e.dates > 2 ? "s" : ""}</span>` : "";
-    return `<a class="ev" href="${esc(e.url || "#")}" target="_blank" rel="noopener" role="listitem">
+    return `<a class="ev" href="${esc(e.url || "#")}" target="_blank" rel="noopener">
       <div class="when"><b>${fmtTime(e.start)}</b><small>${fmtDay(e.start)}</small></div>
       <div>
         <h3>${esc(e.title)}</h3>

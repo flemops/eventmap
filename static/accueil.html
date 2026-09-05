@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Les événements parisiens de la semaine, rangés par culture d'origine et par catégorie, avec une carte des sorties gratuites dans tout Paris.">
 <title>EventMap — sortir à Paris, par culture et par catégorie</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2312131f'/%3E%3Cpath d='M16 6c-3.9 0-7 3.1-7 7 0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z' fill='%23ef3d6e'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin>
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="/static/common.css">
 <style>
@@ -144,7 +146,7 @@ footer { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 12px;
       <h2>La carte</h2>
       <small>7 jours · tout Paris</small>
     </div>
-    <a class="mapcard" href="/carte" aria-label="Ouvrir la carte des événements">
+    <a class="mapcard" href="/carte">
       <div id="minimap" role="img" aria-label="Aperçu de la carte des événements"></div>
       <div class="cta"><span>Ouvrir la carte <em id="map-count"></em></span><span class="go">Agrandir →</span></div>
     </a>
@@ -166,6 +168,6 @@ footer { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 12px;
 </div>
 <script src="/static/vendor/leaflet/leaflet.js"></script>
 <script src="/static/common.js"></script>
-<script src="/static/accueil.js?v=c538685885" defer></script>
+<script src="/static/accueil.js?v=f9a0754d8d" defer></script>
 </body>
 </html>
