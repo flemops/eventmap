@@ -98,6 +98,12 @@
       cultures = (await fetch("/api/cultures").then((r) => r.json())).cultures || [];
     } catch { host.innerHTML = `<div class="empty">Cultures indisponibles pour le moment.</div>`; return; }
 
+    // Recale le squelette sur le nombre réel de cultures. Le plancher CSS de
+    // #cultures réserve déjà la hauteur (c'est lui qui tient le CLS) ; ceci
+    // évite seulement d'afficher un grand vide pendant les 14 requêtes
+    // d'événements qui suivent.
+    host.innerHTML = `<div class="skel"></div>`.repeat(cultures.length);
+
     const loaded = await Promise.all(cultures.map(async (c) => {
       try { return { ...c, events: dedupe(await loadEvents({ culture: c.cle })) }; }
       catch { return { ...c, events: [] }; }

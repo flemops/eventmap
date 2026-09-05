@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="robots" content="noindex">
+<meta name="description" content="Les événements parisiens de la semaine, rangés par culture d'origine et par catégorie, avec une carte des sorties gratuites dans tout Paris.">
 <title>EventMap — sortir à Paris, par culture et par catégorie</title>
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="/static/common.css">
@@ -85,6 +85,23 @@ body {
 .empty { color: var(--muted); padding: 22px 4px; font-size: 14px; }
 .skel { height: 62px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); }
 
+/* Réserve la hauteur de la grille des cultures. accueil.js ne la remplit
+   qu'après 15 requêtes (1 × /api/cultures + 14 × /api/events) : sans
+   réservation, tout ce qui suit — la carte, les catégories, la liste — était
+   poussé de ~1050 px sur mobile. CLS mesuré en prod le 05/09/2026 : 0,847.
+   Un PLANCHER, pas une hauteur fixe : une API en erreur (le catch remplace
+   la grille par un seul .empty) ou une taxonomie plus courte feraient
+   autrement REMONTER le contenu, ce qui coûte autant en CLS qu'une descente.
+   Paliers = points de bascule de repeat(auto-fill, minmax(210px, 1fr)) dans
+   .wrap (960 px moins 28 de padding). Hauteurs mesurées à 14 cultures :
+   1257 / 689 / 508 / 409 px ; les planchers gardent une marge sous la valeur
+   mobile (le contenu qui suit est de toute façon sous la ligne de flottaison)
+   et au-dessus des valeurs desktop, où il reste visible. */
+#cultures { min-height: 1100px; }
+@media (min-width: 456px) { #cultures { min-height: 700px; } }
+@media (min-width: 674px) { #cultures { min-height: 520px; } }
+@media (min-width: 892px) { #cultures { min-height: 420px; } }
+
 footer { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 12px; font-size: 11px; color: var(--muted); }
 
 /* ---- fiche de lieu ------------------------------------------------------ */
@@ -149,6 +166,6 @@ footer { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 12px;
 </div>
 <script src="/static/vendor/leaflet/leaflet.js"></script>
 <script src="/static/common.js"></script>
-<script src="/static/accueil.js?v=d3f68a421a" defer></script>
+<script src="/static/accueil.js?v=c538685885" defer></script>
 </body>
 </html>
