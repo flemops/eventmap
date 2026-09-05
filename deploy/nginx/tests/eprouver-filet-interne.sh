@@ -31,6 +31,16 @@ PIDF="$RACINE/nginx-bac.pid"
 MASTER="${MASTER:-oui}"
 AMONT="${AMONT:-non}"
 
+# Le master du bac partage l'espace de PID de l'hote : interrompre le banc le
+# laisserait tourner, avec ses montages et son namespace reseau. On le tue donc
+# sur toute sortie, y compris une interruption — et TOUJOURS par son PID, jamais
+# par un motif : `pkill -f "nginx: master"` frapperait aussi la production.
+nettoyer() {
+  { [[ -f "$PIDF" ]] && kill -TERM "$(cat "$PIDF")"; pkill -f "http.server"; } >/dev/null 2>&1
+  return 0
+}
+trap nettoyer EXIT INT TERM
+
 ip link set lo up || { echo "lo indisponible" >&2; exit 90; }
 
 mkdir -p "$LOGS" "$LIB"
@@ -218,6 +228,5 @@ empreinte "$RES/$NOM.apres"
     | tr -d '\r' | grep -iE '^(HTTP/|content-security-policy)' || echo "(aucune reponse)"
 } > "$RES/$NOM.servi"
 
-{ [[ -f "$PIDF" ]] && kill -TERM "$(cat "$PIDF")"; pkill -f "http.server"; } >/dev/null 2>&1
-wait 2>/dev/null
+nettoyer
 exit 0
