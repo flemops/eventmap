@@ -62,10 +62,20 @@ systemctl daemon-reload
 systemctl enable --now eventmap
 systemctl restart eventmap
 
-echo "==> nginx (le fichier est installé, PAS activé : il faut d'abord le sous-domaine)"
-install -m 644 deploy/nginx-eventmap.conf /etc/nginx/sites-available/eventmap
-echo "    -> éditer server_name dans /etc/nginx/sites-available/eventmap,"
+echo "==> nginx (fichiers installés ; le site n'est PAS encore activé)"
+# Les snippets AVANT le fichier de site qui les inclut : dans l'autre sens,
+# `nginx -t` échoue sur un include manquant.
+install -d -m 755 /etc/nginx/snippets
+install -m 644 deploy/nginx/snippets/eventmap-entetes.conf /etc/nginx/snippets/eventmap-entetes.conf
+install -m 644 deploy/nginx/snippets/eventmap-csp.conf     /etc/nginx/snippets/eventmap-csp.conf
+install -m 644 deploy/nginx/eventmap.conf                  /etc/nginx/sites-available/eventmap
+echo "    -> éditer server_name dans deploy/nginx/eventmap.conf (le dépôt, PAS /etc/nginx),"
 echo "       puis : ln -s /etc/nginx/sites-available/eventmap /etc/nginx/sites-enabled/ && nginx -t && systemctl reload nginx"
+echo "    -> ensuite, pour toute mise à jour de la config nginx :"
+echo "         bash deploy/nginx/nginx-sync.sh check         (signale une dérive, ne modifie rien)"
+echo "         sudo bash deploy/nginx/nginx-sync.sh apply    (installe, teste, recharge, restaure si échec)"
+echo "       ATTENTION : 'apply' ACTIVE le site (lien dans sites-enabled) et recharge nginx."
+echo "       Ne le lancer qu'une fois le sous-domaine résolu."
 
 echo
 sleep 3
