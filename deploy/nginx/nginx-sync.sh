@@ -257,11 +257,50 @@ if ! nginx -t; then
   exit 1
 fi
 
+# Le PID du master, tel que nginx lui-meme le connait : la directive `pid` de
+# la configuration, et non un chemin devine.
+pid_master() {
+  local f
+  f=$(nginx -T 2>/dev/null | awk '/^[[:space:]]*pid[[:space:]]/{gsub(/;/,"",$2); print $2; exit}')
+  [[ -n "$f" ]] || f=/run/nginx.pid
+  [[ -r "$f" ]] && cat "$f"
+}
+# `|| true` obligatoire : pgrep sort en 1 quand il ne trouve aucun processus,
+# et sous `pipefail` cela fait echouer tout le pipeline, donc l'affectation,
+# donc — avec `set -e` — le script entier. Il mourrait ici, juste apres le
+# rechargement et AVANT la restauration, en laissant /etc/nginx modifie.
+# Trouve par le banc d'essai, scenario r3_refus_A.
+MASTER_PID="$(pid_master || true)"
+WORKERS_AVANT=""
+if [[ -n "$MASTER_PID" ]]; then
+  WORKERS_AVANT="$(pgrep -P "$MASTER_PID" 2>/dev/null | sort | tr '\n' ' ' || true)"
+fi
+
 echo "==> Rechargement"
 if ! systemctl reload nginx; then
   echo "==> Le rechargement a echoue." >&2
   restaurer
   exit 1
+fi
+
+# ATTENDRE QUE LE RECHARGEMENT AIT REELLEMENT PRIS. `nginx -s reload` rend la
+# main des l'envoi du SIGHUP : pendant un court instant, les anciens workers
+# repondent encore, sous l'ANCIENNE configuration. Sonder tout de suite fait
+# donc valider le deploiement sur le comportement d'avant — mesure sur cette
+# VM : la premiere sonde renvoie l'ancienne CSP, la suivante la bonne.
+# Un simple delai serait un pari ; on attend un fait : le renouvellement
+# complet du jeu de workers du master.
+if [[ -n "$MASTER_PID" && -n "$WORKERS_AVANT" ]]; then
+  echo "==> Attente du renouvellement des workers"
+  for _ in $(seq 1 20); do
+    workers_apres="$(pgrep -P "$MASTER_PID" 2>/dev/null | sort | tr '\n' ' ' || true)"
+    [[ -n "$workers_apres" && "$workers_apres" != "$WORKERS_AVANT" ]] && break
+    sleep 0.5
+  done
+  if [[ "${workers_apres:-}" == "$WORKERS_AVANT" ]]; then
+    echo "  AVERTISSEMENT : les workers n'ont pas change en 10 s. La verification" >&2
+    echo "  qui suit porte peut-etre encore sur l'ancienne configuration." >&2
+  fi
 fi
 
 # Verification du comportement reel, pas seulement de la syntaxe.
