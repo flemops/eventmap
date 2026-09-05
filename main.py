@@ -232,6 +232,57 @@ def _window(when: str, now: datetime) -> tuple[datetime, datetime]:
     return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
 
 
+def _venues_pour_cultures(culture: str | None) -> tuple[list[str], list[str] | None]:
+    """Résout le paramètre `culture` en (clés demandées, lieux à filtrer).
+
+    Plusieurs clés séparées par des virgules sont acceptées : l'accueil affiche
+    les 14 cultures et faisait donc 14 requêtes — ~1 s côté client (mesuré le
+    05/09/2026) pour ~25 créneaux. Une clé unique reste le cas nominal et se
+    comporte à l'identique.
+
+    Fonction séparée de la route pour être testable : les paramètres de
+    `api_events` ont des objets `Query()` pour valeurs par défaut, elle n'est
+    donc pas appelable directement.
+
+    Deux pièges, tous deux couverts par des tests :
+    - paramètre absent (`None` ou vide) : renvoyer `None` et non `[]`, car une
+      liste vide passée à `db.search` ne filtre rien du tout — on croirait
+      filtrer et on rendrait la base entière ;
+    - paramètre fourni mais sans aucune clé exploitable (`,`, `  ,  `) : c'est
+      une saisie malformée, elle rendait 404 avant l'ajout du multi-clés et doit
+      continuer, plutôt que de dégénérer silencieusement en absence de filtre.
+    """
+    if not culture:
+        return [], None
+    cles = [c.strip() for c in culture.split(",") if c.strip()]
+    if not cles:
+        raise HTTPException(404, f"culture inconnue ou sans lieu : {culture!r}")
+    lieux: list[str] = []
+    for cle in cles:
+        v = cultures.venues_for(cle)
+        if not v:
+            raise HTTPException(404, f"culture inconnue ou sans lieu : {cle!r}")
+        lieux.extend(v)
+    return cles, list(dict.fromkeys(lieux))  # un lieu ne compte qu'une fois
+
+
+def _ajoute_culture_cle(rows: list[dict], cles: list[str]) -> None:
+    """Marque chaque événement de la culture du LIEU par lequel il est entré.
+
+    Uniquement quand plusieurs cultures sont demandées : sans ce champ, le
+    client ne peut pas regrouper les résultats d'un appel groupé. Le champ
+    `culture` ne suffit pas — il vaut `None` dès qu'un mot-clé d'exclusion
+    s'applique (événement multi-pays), alors que le filtre SQL, lui, porte sur
+    le lieu et a bien ramené l'événement : regrouper sur `culture` perdrait
+    ces événements en silence.
+    """
+    if len(cles) <= 1:
+        return
+    for r in rows:
+        v = cultures.for_venue(r.get("venue"))
+        r["culture_cle"] = v["cle"] if v else None
+
+
 @app.get("/api/events")
 def api_events(
     lat: float = Query(DEFAULT_LAT, ge=-90, le=90),
@@ -247,21 +298,7 @@ def api_events(
 ):
     start, end = _window(when, datetime.now(timezone.utc))
 
-    # Plusieurs cles acceptees en un appel : l'accueil affiche les 14 cultures et
-    # faisait donc 14 requetes, soit ~1 s cote client (mesure du 05/09/2026) pour
-    # ~25 creneaux. Une cle unique reste le cas nominal et se comporte a
-    # l'identique.
-    venues = None
-    cles: list[str] = []
-    if culture:
-        cles = [c.strip() for c in culture.split(",") if c.strip()]
-        venues = []
-        for cle in cles:
-            lieux = cultures.venues_for(cle)
-            if not lieux:
-                raise HTTPException(404, f"culture inconnue ou sans lieu : {cle!r}")
-            venues.extend(lieux)
-        venues = list(dict.fromkeys(venues))  # un lieu ne compte qu'une fois
+    cles, venues = _venues_pour_cultures(culture)
 
     with db.session() as con:
         rows = db.search(con, lat=lat, lon=lon, radius_km=radius, start_from=start,
@@ -275,15 +312,7 @@ def api_events(
         # l'attribut même si son lieu reste admis (cf. cultures.yaml).
         r["culture"] = cultures.for_venue(r.get("venue"), r.get("title"), r.get("description"))
 
-    # Plusieurs cultures demandees : le client doit pouvoir regrouper. `culture`
-    # ci-dessus vaut None des qu'un evenement est ecarte par un mot-cle
-    # d'exclusion, alors que le filtre SQL, lui, porte sur le LIEU et l'a bien
-    # ramene. Ce second champ dit par quel lieu l'evenement est entre — sans lui,
-    # regrouper cote client perdrait silencieusement ces evenements-la.
-    if len(cles) > 1:
-        for r in rows:
-            v = cultures.for_venue(r.get("venue"))
-            r["culture_cle"] = v["cle"] if v else None
+    _ajoute_culture_cle(rows, cles)
 
     return {
         "count": len(rows),
