@@ -18,7 +18,7 @@
   function drawCenter() {
     if (me) me.remove();
     if (circle) circle.remove();
-    me = L.marker([state.lat, state.lon], { icon: L.divIcon({ className: "me", iconSize: [14, 14] }), interactive: false }).addTo(map);
+    me = L.marker([state.lat, state.lon], { icon: L.divIcon({ className: "me", iconSize: [14, 14] }), interactive: false, keyboard: false }).addTo(map);
     circle = L.circle([state.lat, state.lon], { radius: state.radius * 1000, color: "#ef3d6e", weight: 1, fillOpacity: 0.05, interactive: false }).addTo(map);
   }
 
@@ -35,7 +35,7 @@
     const bounds = [];
     evs.forEach((e, i) => {
       const card = document.createElement("a");
-      card.className = "ev"; card.role = "listitem"; card.href = e.url || "#"; card.target = "_blank"; card.rel = "noopener";
+      card.className = "ev"; card.href = e.url || "#"; card.target = "_blank"; card.rel = "noopener";
       card.innerHTML = `
         <div class="when"><b>${fmtTime(e.start)}</b><small>${state.when === "today" ? "" : fmtDay(e.start)}</small></div>
         <div>
