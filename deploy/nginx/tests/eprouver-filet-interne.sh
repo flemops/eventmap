@@ -79,12 +79,29 @@ ancienne_config() {
   if [[ -n "$bak" ]]; then cp -a "$bak" "$SITE_CONF"
   else echo "# ancienne config $SITE (ersatz du banc)" > "$SITE_CONF"; fi
 }
-enlever_snippets() { local d; for d in "${DESTS[@]}"; do [[ "$d" != "$SITE_CONF" ]] && rm -f "$d"; done; }
+# Etat « avant la migration » : on ne retire que les snippets que l'ancienne
+# configuration n'incluait PAS encore. Les retirer tous serait faux et
+# fabriquerait un etat impossible — observatory, par exemple, incluait deja
+# entetes-observatory.conf dans ses 7 locations avant la migration ; le
+# supprimer rendrait l'ancienne config invalide et empecherait tout master de
+# demarrer, ce qui ferait echouer le scenario pour une raison artificielle.
+enlever_snippets_non_utilises() {
+  local d
+  for d in "${DESTS[@]}"; do
+    [[ "$d" == "$SITE_CONF" ]] && continue
+    if [[ -f "$SITE_CONF" ]] && grep -q "$(basename "$d")" "$SITE_CONF"; then
+      continue   # deja utilise par l'ancienne config : il existait donc deja
+    fi
+    rm -f "$d"
+  done
+}
 
 case "$ETAT" in
-  A) enlever_snippets; ancienne_config; ln -sfn "$SITE_CONF" "$LIEN" ;;
-  B) enlever_snippets; rm -f "$SITE_CONF" "$LIEN" ;;
-  C) enlever_snippets; ancienne_config
+  A) ancienne_config; enlever_snippets_non_utilises; ln -sfn "$SITE_CONF" "$LIEN" ;;
+  B) # Site jamais installe : le vhost disparait, donc les snippets qui ne
+     # servaient qu'a lui aussi. On les retire tous, ce qui est ici coherent.
+     for d in "${DESTS[@]}"; do rm -f "$d"; done; rm -f "$LIEN" ;;
+  C) ancienne_config; enlever_snippets_non_utilises
      echo "# config de secours" > "/etc/nginx/sites-available/$SITE-secours"
      ln -sfn "/etc/nginx/sites-available/$SITE-secours" "$LIEN" ;;
   D) ancienne_config; ln -sfn "$SITE_CONF" "$LIEN"
