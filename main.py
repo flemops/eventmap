@@ -240,17 +240,28 @@ def api_events(
     when: str = Query("today", pattern="^(today|tomorrow|weekend|week)$"),
     price: str | None = Query(None, pattern="^(free|paid|free_conditional)$"),
     category: str | None = Query(None, max_length=20),
-    culture: str | None = Query(None, max_length=40,
-        description="cle de culture (voir /api/cultures) : filtre sur les lieux mono-culturels"),
+    culture: str | None = Query(None, max_length=200,
+        description="cle(s) de culture separees par des virgules (voir /api/cultures) : "
+                    "filtre sur les lieux mono-culturels"),
     limit: int = Query(100, ge=1, le=300),
 ):
     start, end = _window(when, datetime.now(timezone.utc))
 
+    # Plusieurs cles acceptees en un appel : l'accueil affiche les 14 cultures et
+    # faisait donc 14 requetes, soit ~1 s cote client (mesure du 05/09/2026) pour
+    # ~25 creneaux. Une cle unique reste le cas nominal et se comporte a
+    # l'identique.
     venues = None
+    cles: list[str] = []
     if culture:
-        venues = cultures.venues_for(culture)
-        if not venues:
-            raise HTTPException(404, f"culture inconnue ou sans lieu : {culture!r}")
+        cles = [c.strip() for c in culture.split(",") if c.strip()]
+        venues = []
+        for cle in cles:
+            lieux = cultures.venues_for(cle)
+            if not lieux:
+                raise HTTPException(404, f"culture inconnue ou sans lieu : {cle!r}")
+            venues.extend(lieux)
+        venues = list(dict.fromkeys(venues))  # un lieu ne compte qu'une fois
 
     with db.session() as con:
         rows = db.search(con, lat=lat, lon=lon, radius_km=radius, start_from=start,
@@ -263,6 +274,17 @@ def api_events(
         # description passés pour l'option C : un évènement multi-pays perd
         # l'attribut même si son lieu reste admis (cf. cultures.yaml).
         r["culture"] = cultures.for_venue(r.get("venue"), r.get("title"), r.get("description"))
+
+    # Plusieurs cultures demandees : le client doit pouvoir regrouper. `culture`
+    # ci-dessus vaut None des qu'un evenement est ecarte par un mot-cle
+    # d'exclusion, alors que le filtre SQL, lui, porte sur le LIEU et l'a bien
+    # ramene. Ce second champ dit par quel lieu l'evenement est entre — sans lui,
+    # regrouper cote client perdrait silencieusement ces evenements-la.
+    if len(cles) > 1:
+        for r in rows:
+            v = cultures.for_venue(r.get("venue"))
+            r["culture_cle"] = v["cle"] if v else None
+
     return {
         "count": len(rows),
         "window": {"from": start.isoformat(timespec="minutes"), "to": end.isoformat(timespec="minutes")},

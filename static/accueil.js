@@ -100,14 +100,26 @@
 
     // Recale le squelette sur le nombre réel de cultures. Le plancher CSS de
     // #cultures réserve déjà la hauteur (c'est lui qui tient le CLS) ; ceci
-    // évite seulement d'afficher un grand vide pendant les 14 requêtes
-    // d'événements qui suivent.
+    // évite seulement d'afficher un grand vide pendant la requête qui suit.
     host.innerHTML = `<div class="skel"></div>`.repeat(cultures.length);
 
-    const loaded = await Promise.all(cultures.map(async (c) => {
-      try { return { ...c, events: dedupe(await loadEvents({ culture: c.cle })) }; }
-      catch { return { ...c, events: [] }; }
-    }));
+    /* Un seul appel pour toutes les cultures. Il y en avait un par culture, soit
+       14 requêtes et ~880 ms mesurés le 05/09/2026 — pour 25 créneaux au total.
+       `limit: 300` est le maximum accepté par l'API et laisse une marge de x12 ;
+       au-delà, db.search coupe par distance et une culture éloignée
+       disparaîtrait sans bruit, d'où le garde-fou.
+       Le regroupement se fait sur `culture_cle` (le lieu par lequel l'événement
+       est entré) et non sur `culture`, qui vaut null dès qu'un mot-clé
+       d'exclusion s'applique — s'en servir perdrait ces événements. */
+    let bruts = [];
+    try {
+      bruts = await loadEvents({ culture: cultures.map((c) => c.cle).join(","), limit: 300 });
+    } catch { /* la grille reste affichée, toutes les cultures à zéro */ }
+    if (bruts.length >= 300) console.warn("EventMap : limite d'événements atteinte, des cultures peuvent manquer");
+
+    const parCle = new Map(cultures.map((c) => [c.cle, []]));
+    for (const e of bruts) parCle.get(e.culture_cle)?.push(e);
+    const loaded = cultures.map((c) => ({ ...c, events: dedupe(parCle.get(c.cle)) }));
 
     const total = loaded.reduce((n, c) => n + c.events.length, 0);
     $("#cultures-count").textContent = `${loaded.length} cultures · ${total} événement${total > 1 ? "s" : ""}`;
