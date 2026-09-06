@@ -146,6 +146,52 @@ if [[ "$drift" -eq 0 ]]; then
   exit 0
 fi
 
+# --- photographie des VOISINS, avant toute modification ---------------------
+# La verification post-rechargement ne regarde que $VERIF_HOST. Or une
+# configuration syntaxiquement valide peut capter le server_name d'un voisin :
+# `nginx -t` ne rend qu'un [warn] « conflicting server name », notre propre
+# sonde repond 200, et le site voisin tombe sans que rien ne le signale. Ce
+# reverse proxy sert trois domaines : le filet doit les couvrir tous.
+#
+# On compare la CSP servie, pas le code HTTP. Tous les add_header sont en
+# `always`, donc un 502 du a un applicatif qui redemarre porte la MEME CSP :
+# le critere est insensible a la sante des applications et sensible a un
+# detournement de server_name. C'est ce qui evite les restaurations a tort.
+#
+# On compare aussi AVANT/APRES plutot qu'a un attendu absolu : un voisin deja
+# casse le reste, sans nous faire echouer pour un degat qu'on n'a pas cause.
+hote_representatif() { # $1 = fichier de vhost -> premier nom de serveur reel
+  awk '/^[[:space:]]*server_name[[:space:]]/ {
+         for (i = 2; i <= NF; i++) {
+           t = $i; sub(/;$/, "", t)
+           if (t != "_" && t !~ /^\*/ && t != "") { print t; exit }
+         }
+       }' "$1" 2>/dev/null || true
+}
+
+csp_servie() { # $1 = hote -> valeur de l'en-tete, vide si aucun
+  curl -skI --max-time 5 --resolve "$1:443:127.0.0.1" "https://$1/" 2>/dev/null \
+    | tr -d '\r' \
+    | awk 'tolower($1) == "content-security-policy:" {
+             sub(/^[^:]*:[[:space:]]*/, ""); print; exit }' || true
+}
+
+voisins=(); csp_avant=()
+for lien in /etc/nginx/sites-enabled/*; do
+  [[ -e "$lien" ]] || continue
+  nom="$(basename "$lien")"
+  [[ "$nom" == "$SITE" ]] && continue
+  hote="$(hote_representatif "$lien")"
+  [[ -n "$hote" ]] || continue
+  avant="$(csp_servie "$hote")"
+  # Sans reponse exploitable avant, il n'y a pas de reference : on ne juge pas.
+  [[ -n "$avant" ]] || continue
+  voisins+=("$hote"); csp_avant+=("$avant")
+done
+if [[ "${#voisins[@]}" -gt 0 ]]; then
+  echo "==> Voisins sous surveillance : ${voisins[*]}"
+fi
+
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
 # On memorise TOUT ce qu'on s'apprete a modifier, y compris les absences : une
@@ -373,6 +419,25 @@ fi
 if [[ "$csp" -gt 1 ]]; then
   echo "  AVERTISSEMENT : $csp en-tetes Content-Security-Policy sur la meme reponse."
   echo "  Le navigateur applique alors l'INTERSECTION des politiques. A verifier."
+fi
+
+# Les voisins servent-ils toujours la meme chose qu'avant ? Leur configuration
+# n'a pas ete touchee : toute difference vient donc de ce qu'on vient
+# d'installer.
+for i in "${!voisins[@]}"; do
+  hote="${voisins[$i]}"
+  apres="$(csp_servie "$hote")"
+  if [[ "$apres" != "${csp_avant[$i]}" ]]; then
+    echo "==> $hote ne sert plus la meme politique qu'avant ce deploiement." >&2
+    echo "    Sa configuration n'a pourtant pas ete modifiee : le vhost installe" >&2
+    echo "    capte probablement son server_name (nginx ne rend qu'un [warn]" >&2
+    echo "    « conflicting server name », pas une erreur). Restauration." >&2
+    restaurer
+    exit 1
+  fi
+done
+if [[ "${#voisins[@]}" -gt 0 ]]; then
+  echo "  Voisins inchanges : ${voisins[*]}"
 fi
 
 echo "==> OK. La VM est alignee sur le depot pour $SITE."

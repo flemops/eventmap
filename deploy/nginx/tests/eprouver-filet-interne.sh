@@ -37,6 +37,12 @@ AMONT="${AMONT:-non}"
 # par un motif : `pkill -f "nginx: master"` frapperait aussi la production.
 nettoyer() {
   { [[ -f "$PIDF" ]] && kill -TERM "$(cat "$PIDF")"; pkill -f "http.server"; } >/dev/null 2>&1
+  # Un scenario defait son propre sabotage. Le drapeau immuable porte sur
+  # l'inode reel sous /tmp : il survit au namespace et, s'il reste, contamine
+  # TOUS les scenarios suivants — un fichier qu'on ne peut plus reecrire fait
+  # echouer leur restauration pour une raison qui n'a rien a voir avec eux.
+  # C'est arrive : r8 echouait en serie et passait seul.
+  { [[ -n "${VERROU_CIBLE:-}" ]] && chattr -i "$VERROU_CIBLE"; } >/dev/null 2>&1
   return 0
 }
 trap nettoyer EXIT INT TERM
@@ -141,6 +147,28 @@ if [[ "${CASSER_CONF:-non}" == "oui" ]]; then
   grep -q "cette_directive_nexiste_pas" "$cible" || { echo "SABOTAGE SANS EFFET : $cible" >&2; exit 92; }
 fi
 
+# Detournement de server_name : on ajoute au vhost teste le domaine d'un VOISIN.
+# `nginx -t` ne rend qu'un [warn] « conflicting server name » ; comme
+# sites-enabled est charge par ordre alphabetique, le premier bloc declare
+# capture le nom. Le voisin tombe sans qu'aucune erreur ne soit levee.
+if [[ "${DETOURNER:-non}" == "oui" ]]; then
+  voisin=""
+  for l in /etc/nginx/sites-enabled/*; do
+    [[ -e "$l" && "$(basename "$l")" != "$SITE" ]] || continue
+    voisin=$(awk '/^[[:space:]]*server_name[[:space:]]/ {
+                    for (i=2;i<=NF;i++){t=$i; sub(/;$/,"",t)
+                      if (t!="_" && t !~ /^\*/ && t!=""){print t; exit}}}' "$l")
+    [[ -n "$voisin" ]] && break
+  done
+  [[ -n "$voisin" ]] || { echo "SABOTAGE IMPOSSIBLE : aucun voisin trouve" >&2; exit 94; }
+  src_site="$REPO/${FICHIERS[-1]%%|*}"
+  ligne=$(grep -n '^[[:space:]]*server_name[[:space:]]' "$src_site" | tail -1 | cut -d: -f1)
+  [[ -n "$ligne" ]] || { echo "SABOTAGE IMPOSSIBLE : pas de server_name dans $src_site" >&2; exit 94; }
+  sed -i "${ligne}s/;/ $voisin;/" "$src_site"
+  grep -q "$voisin" "$src_site" || { echo "SABOTAGE SANS EFFET : $src_site" >&2; exit 94; }
+  echo "(banc : $voisin ajoute au server_name de $SITE, ligne $ligne)" >&2
+fi
+
 # CSP retiree du snippet : le vrai nginx servira alors sans CSP, et c'est la
 # vraie reponse HTTP qui fera echouer la verification.
 if [[ "${CASSER_CSP:-non}" == "oui" ]]; then
@@ -170,6 +198,15 @@ if [[ "$AMONT" == "oui" ]]; then
 fi
 
 # --- shims -------------------------------------------------------------------
+# On repart d'un repertoire VIDE a chaque scenario. $SHIM vit dans $RACINE, qui
+# survit d'un scenario a l'autre : sans ce nettoyage, l'enrobage `nginx` cree
+# par le seul scenario de verrouillage restait en tete de PATH pour TOUS les
+# suivants et se rearmait a chaque fois, posant un chattr +i sur le fichier de
+# site au moment du `nginx -t`. Les scenarios qui doivent restaurer apres ce
+# point echouaient alors sur un « Operation not permitted » sans rapport avec
+# ce qu'ils testaient — et passaient parfaitement en isolement. Diagnostic
+# couteux, cause triviale.
+rm -rf "$SHIM"
 mkdir -p "$SHIM"
 cat > "$SHIM/systemctl" <<'EOS'
 #!/usr/bin/env bash

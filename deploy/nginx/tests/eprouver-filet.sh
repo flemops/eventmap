@@ -62,8 +62,20 @@ scenario() { # $1 nom, $2 etat, $3.. VAR=val
   local nom=$1 etat=$2; shift 2
   # Le drapeau immuable pose par le scenario de verrouillage porte sur l'inode
   # reel, sous /tmp : il survit au namespace et doit etre retire a la main.
-  [[ -d "$TRAVAIL" ]] && chattr -R -i "$TRAVAIL" 2>/dev/null
-  rm -rf "$TRAVAIL" "$REPO"; cp -a "$REF" "$TRAVAIL"; cp -a "$DEPOT" "$REPO"
+  # On VERIFIE que la copie de travail a bien disparu : un fichier immuable
+  # resterait, `rm -rf` echouerait en silence, `cp -a` recopierait a cote, et
+  # tous les scenarios suivants heriteraient d'un fichier non reinscriptible.
+  # Sans ce controle, un scenario echoue en serie et passe isolement — le pire
+  # des symptomes a diagnostiquer.
+  if [[ -d "$TRAVAIL" ]]; then
+    chattr -R -i "$TRAVAIL" 2>/dev/null || true
+    rm -rf "$TRAVAIL"
+    if [[ -e "$TRAVAIL" ]]; then
+      rouge "  $nom : impossible d'effacer $TRAVAIL (attribut immuable resistant)"
+      return 1
+    fi
+  fi
+  rm -rf "$REPO"; cp -a "$REF" "$TRAVAIL"; cp -a "$DEPOT" "$REPO"
   rm -f "$RACINE/.verrou-pose" "$RACINE/nginx-bac.pid"
   env NOM="$nom" ETAT="$etat" RACINE="$RACINE" "$@" \
       unshare -m -n bash "$INNER"
@@ -176,6 +188,27 @@ verdict_lien() { # $1 nom
 LIEN_ATTENDU="/etc/nginx/sites-enabled/$SITE"
 scenario r7_lien_absent E AMONT=oui ; verdict_lien r7_lien_absent || echec=1
 scenario r7_lien_devie  F AMONT=oui ; verdict_lien r7_lien_devie  || echec=1
+
+echo "-- Declencheur 7 : le vhost installe DETOURNE le domaine d'un voisin --"
+# `nginx -t` ne rend qu'un [warn] : la config est valide, notre propre sonde
+# repond 200, et pourtant un AUTRE site du meme reverse proxy est tombe.
+# Ce scenario echoue tant que nginx-sync.sh ne surveille pas ses voisins.
+verdict_voisin() { # $1 nom
+  local nom=$1 ok=1 notes=() code
+  code=$(cat "$RES/$nom.code" 2>/dev/null || echo "?")
+  [[ "$code" == "1" ]] || { ok=0; notes+=("code $code au lieu de 1 : le detournement est passe"); }
+  grep -q "Voisins sous surveillance" "$RES/$nom.log" 2>/dev/null \
+    && notes+=("voisins photographies") || { ok=0; notes+=("aucune surveillance des voisins"); }
+  grep -q "ne sert plus la meme politique" "$RES/$nom.log" 2>/dev/null \
+    && notes+=("detournement detecte") || { ok=0; notes+=("DETOURNEMENT NON DETECTE"); }
+  if diff -q "$RES/$nom.avant" "$RES/$nom.apres" >/dev/null 2>&1; then
+    notes+=("etat integralement restaure")
+  else ok=0; notes+=("ETAT NON RESTAURE"); fi
+  if [[ $ok -eq 1 ]]; then vert "  PASS  $nom  — ${notes[*]}"
+  else rouge "  FAIL  $nom  — ${notes[*]}"; echo "  ---- log ----"; tail -16 "$RES/$nom.log" | sed 's/^/    /'; fi
+  return $((1 - ok))
+}
+scenario r8_detourne_A A DETOURNER=oui AMONT=oui ; verdict_voisin r8_detourne_A || echec=1
 
 echo "-- Cas limite : l'amont applicatif est a l'arret (vrai 502) --"
 # Sans upstream, tout proxy_pass renvoie un vrai 502. Le critere du script
