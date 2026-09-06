@@ -36,6 +36,11 @@ AMONT="${AMONT:-non}"
 # sur toute sortie, y compris une interruption — et TOUJOURS par son PID, jamais
 # par un motif : `pkill -f "nginx: master"` frapperait aussi la production.
 nettoyer() {
+  local rc=$?
+  # Un scenario qui s'arrete AVANT d'avoir lance l'apply — sabotage impossible,
+  # scenario non applicable — n'ecrivait pas son code de sortie : le verdict
+  # lisait « ? » et comptait un echec la ou il n'y en avait pas.
+  [[ -n "${RES:-}" && -n "${NOM:-}" && ! -f "$RES/$NOM.code" ]] && echo "$rc" > "$RES/$NOM.code"
   { [[ -f "$PIDF" ]] && kill -TERM "$(cat "$PIDF")"; pkill -f "http.server"; } >/dev/null 2>&1
   # Un scenario defait son propre sabotage. Le drapeau immuable porte sur
   # l'inode reel sous /tmp : il survit au namespace et, s'il reste, contamine
