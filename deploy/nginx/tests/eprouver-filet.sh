@@ -196,6 +196,12 @@ echo "-- Declencheur 7 : le vhost installe DETOURNE le domaine d'un voisin --"
 verdict_voisin() { # $1 nom
   local nom=$1 ok=1 notes=() code
   code=$(cat "$RES/$nom.code" 2>/dev/null || echo "?")
+  # 95 = le site teste est charge en dernier : il ne peut capter le nom
+  # d'aucun voisin. Non applicable, et ce n'est pas un defaut.
+  if [[ "$code" == "95" ]]; then
+    vert "  S/O   $nom  — non applicable : $SITE est charge en dernier, aucun voisin a capter"
+    return 0
+  fi
   [[ "$code" == "1" ]] || { ok=0; notes+=("code $code au lieu de 1 : le detournement est passe"); }
   grep -q "Voisins sous surveillance" "$RES/$nom.log" 2>/dev/null \
     && notes+=("voisins photographies") || { ok=0; notes+=("aucune surveillance des voisins"); }

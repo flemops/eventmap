@@ -152,15 +152,31 @@ fi
 # sites-enabled est charge par ordre alphabetique, le premier bloc declare
 # capture le nom. Le voisin tombe sans qu'aucune erreur ne soit levee.
 if [[ "${DETOURNER:-non}" == "oui" ]]; then
+  # Le voisin doit etre charge APRES nous. `include sites-enabled/*` est trie,
+  # et quand deux blocs declarent le meme server_name, c'est le PREMIER declare
+  # qui gagne — le second recoit un simple [warn] « ignored ». Injecter le nom
+  # d'un voisin qui nous precede ne vole donc rien : il n'y a pas de victime,
+  # et `apply` a raison de reussir. Le scenario n'aurait mesure que sa propre
+  # inefficacite. Verifie a la source : l'ordre est eventmap, observatory,
+  # portfolio.
   voisin=""
   for l in /etc/nginx/sites-enabled/*; do
-    [[ -e "$l" && "$(basename "$l")" != "$SITE" ]] || continue
+    [[ -e "$l" ]] || continue
+    n="$(basename "$l")"
+    [[ "$n" > "$SITE" ]] || continue
     voisin=$(awk '/^[[:space:]]*server_name[[:space:]]/ {
                     for (i=2;i<=NF;i++){t=$i; sub(/;$/,"",t)
                       if (t!="_" && t !~ /^\*/ && t!=""){print t; exit}}}' "$l")
     [[ -n "$voisin" ]] && break
   done
-  [[ -n "$voisin" ]] || { echo "SABOTAGE IMPOSSIBLE : aucun voisin trouve" >&2; exit 94; }
+  if [[ -z "$voisin" ]]; then
+    # Dernier site de l'ordre de chargement : il ne peut voler personne.
+    # Non applicable n'est pas un echec — le banc doit le dire, pas le compter
+    # comme un defaut.
+    echo "SCENARIO NON APPLICABLE : $SITE est charge en dernier, il ne peut" >&2
+    echo "capter le server_name d'aucun voisin." >&2
+    exit 95
+  fi
   src_site="$REPO/${FICHIERS[-1]%%|*}"
   ligne=$(grep -n '^[[:space:]]*server_name[[:space:]]' "$src_site" | tail -1 | cut -d: -f1)
   [[ -n "$ligne" ]] || { echo "SABOTAGE IMPOSSIBLE : pas de server_name dans $src_site" >&2; exit 94; }
