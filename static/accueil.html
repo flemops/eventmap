@@ -17,6 +17,22 @@
 <meta property="og:title" content="EventMap — sortir à Paris, par culture et par catégorie">
 <meta property="og:description" content="Les événements parisiens de la semaine, rangés par culture d'origine et par catégorie, avec une carte des sorties gratuites dans tout Paris.">
 <meta name="twitter:card" content="summary">
+<!-- Balisage structure schema.org. type="application/ld+json" n'est pas un
+     script executable : il echappe a script-src de la CSP, l'inline passe sans
+     hash ni fichier externe.
+     PAS de type Event ici, et c'est delibere : les 300 evenements gratuits que
+     la page liste viennent tous d'opendata Ville de Paris et leur `url` pointe
+     sur paris.fr (verifie le 05/09/2026 : 300/300, source qfap). Baliser en
+     Event un contenu dont la page canonique est ailleurs met le site en
+     concurrence frontale avec la source qui a l'anteriorite, pour un balisage
+     que Google peut traiter comme du spam structure. On decrit donc le SITE,
+     qui est le contenu original. -->
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+{"@type":"WebSite","@id":"https://eventmap.hamdy-tabsissi.com/#website","name":"EventMap","url":"https://eventmap.hamdy-tabsissi.com/","inLanguage":"fr-FR","description":"Les evenements parisiens de la semaine, ranges par culture d'origine et par categorie, avec une carte des sorties gratuites dans tout Paris."},
+{"@type":"WebApplication","@id":"https://eventmap.hamdy-tabsissi.com/#app","name":"EventMap","url":"https://eventmap.hamdy-tabsissi.com/","applicationCategory":"LifestyleApplication","operatingSystem":"Any","browserRequirements":"Requires JavaScript","inLanguage":"fr-FR","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"isPartOf":{"@id":"https://eventmap.hamdy-tabsissi.com/#website"}}
+]}
+</script>
 <link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin>
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="/static/common.css">

@@ -14,6 +14,14 @@
 <meta property="og:title" content="La carte des sorties à Paris — EventMap">
 <meta property="og:description" content="La carte des sorties à Paris ce soir, demain, le week-end ou sur sept jours : événements gratuits ou payants, filtrables par catégorie et par distance.">
 <meta name="twitter:card" content="summary">
+<!-- Balisage structure schema.org : la page de carte, rattachee au meme WebSite
+     que l'accueil (@id partage). Pas de type Event, meme raison que sur
+     l'accueil : les evenements listes ont leur page canonique sur paris.fr. -->
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+{"@type":"WebPage","@id":"https://eventmap.hamdy-tabsissi.com/carte#webpage","name":"La carte des sorties a Paris","url":"https://eventmap.hamdy-tabsissi.com/carte","inLanguage":"fr-FR","description":"La carte des sorties a Paris ce soir, demain, le week-end ou sur sept jours : evenements gratuits ou payants, filtrables par categorie et par distance.","isPartOf":{"@id":"https://eventmap.hamdy-tabsissi.com/#website"}}
+]}
+</script>
 <link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin>
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="/static/common.css">
