@@ -151,6 +151,32 @@ scenario r4_install_D D MASTER=non ; verdict r4_install_D 1 oui || echec=1
 echo "-- Declencheur 5 : la RESTAURATION elle-meme echoue (chattr +i reel) --"
 scenario r5_verrou_A A CASSER_CONF=oui SHIM_VERROU=oui AMONT=oui ; verdict_alerte r5_verrou_A || echec=1
 
+echo "-- Declencheur 6 : fichiers conformes mais site NON ACTIVE --"
+# Le lien d'activation fait partie de l'etat compare. Sans cela, `check`
+# repondait « aucune derive » et `apply` court-circuitait avant de reposer le
+# lien : le site n'etait pas servi et l'outil annoncait que tout allait bien.
+# C'est le defaut BLOQUANT remonte en relecture le 06/09.
+verdict_lien() { # $1 nom
+  local nom=$1 ok=1 notes=() code
+  code=$(cat "$RES/$nom.code" 2>/dev/null || echo "?")
+  [[ "$code" == "0" ]] || { ok=0; notes+=("code $code au lieu de 0"); }
+  grep -qE "LIEN (MANQUANT|DEVIE|ANORMAL)" "$RES/$nom.log" 2>/dev/null \
+    && notes+=("derive du lien detectee") || { ok=0; notes+=("derive du lien NON detectee"); }
+  grep -q "Rien a faire" "$RES/$nom.log" 2>/dev/null \
+    && { ok=0; notes+=("a court-circuite sur « Rien a faire »"); }
+  if grep -q "^${LIEN_ATTENDU} LIEN -> ${SITE_CONF}$" "$RES/$nom.apres" 2>/dev/null; then
+    notes+=("lien repose vers $SITE_CONF")
+  else
+    ok=0; notes+=("LIEN NON RETABLI : $(grep -a "sites-enabled" "$RES/$nom.apres" | head -1)")
+  fi
+  if [[ $ok -eq 1 ]]; then vert "  PASS  $nom  — ${notes[*]}"
+  else rouge "  FAIL  $nom  — ${notes[*]}"; echo "  ---- log ----"; tail -14 "$RES/$nom.log" | sed 's/^/    /'; fi
+  return $((1 - ok))
+}
+LIEN_ATTENDU="/etc/nginx/sites-enabled/$SITE"
+scenario r7_lien_absent E AMONT=oui ; verdict_lien r7_lien_absent || echec=1
+scenario r7_lien_devie  F AMONT=oui ; verdict_lien r7_lien_devie  || echec=1
+
 echo "-- Cas limite : l'amont applicatif est a l'arret (vrai 502) --"
 # Sans upstream, tout proxy_pass renvoie un vrai 502. Le critere du script
 # accepte tout code sauf 000 : une config nginx correcte NE DOIT PAS etre

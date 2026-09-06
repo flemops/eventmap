@@ -62,25 +62,73 @@ systemctl daemon-reload
 systemctl enable --now eventmap
 systemctl restart eventmap
 
-echo "==> nginx (fichiers installés ; le site n'est PAS encore activé)"
-# Les snippets AVANT le fichier de site qui les inclut : dans l'autre sens,
-# `nginx -t` échoue sur un include manquant.
-install -d -m 755 /etc/nginx/snippets
-install -m 644 deploy/nginx/snippets/eventmap-entetes.conf /etc/nginx/snippets/eventmap-entetes.conf
-install -m 644 deploy/nginx/snippets/eventmap-csp.conf     /etc/nginx/snippets/eventmap-csp.conf
-install -m 644 deploy/nginx/eventmap.conf                  /etc/nginx/sites-available/eventmap
-echo "    -> éditer server_name dans deploy/nginx/eventmap.conf (le dépôt, PAS /etc/nginx),"
-echo "       puis : ln -s /etc/nginx/sites-available/eventmap /etc/nginx/sites-enabled/ && nginx -t && systemctl reload nginx"
-echo "    -> ensuite, pour toute mise à jour de la config nginx :"
-echo "         bash deploy/nginx/nginx-sync.sh check         (signale une dérive, ne modifie rien)"
-echo "         sudo bash deploy/nginx/nginx-sync.sh apply    (installe, teste, recharge, restaure si échec)"
-echo "       ATTENTION : 'apply' ACTIVE le site (lien dans sites-enabled) et recharge nginx."
-echo "       Ne le lancer qu'une fois le sous-domaine résolu."
+echo "==> nginx (délégué à nginx-sync.sh)"
+# Ce script n'écrit plus lui-même dans /etc/nginx. Une seule voie d'écriture
+# subsiste, celle qui sait revenir en arrière : sauvegarde, `nginx -t`,
+# rechargement surveillé, vérification du comportement réel, et restauration
+# complète dès qu'une étape échoue. Comme install.sh est rejouable après un
+# `git pull`, c'était la dernière voie capable de laisser le reverse proxy —
+# partagé par trois sites — dans un état intermédiaire non testé.
+# `apply` recharge le reverse proxy, PARTAGÉ par portfolio, eventmap et
+# observatory. Un installeur applicatif qui recharge un proxy partagé, ça se
+# dit : c'est le prix de l'auto-réparation (un lien d'activation manquant est
+# reposé tout seul), pas un détail.
+SYNC="$APP_DIR/deploy/nginx/nginx-sync.sh"
+ECHEC_NGINX=0
+
+if ! systemctl is-active --quiet nginx; then
+  # Rien n'a été tenté : ce n'est pas un échec de l'installeur. L'application
+  # est installée et fonctionnelle ; on avertit sans faire échouer le script.
+  echo "    nginx n'est pas démarré (ou pas installé) : le reverse proxy n'a pas"
+  echo "    été touché. Une fois nginx en service : sudo bash $SYNC apply"
+elif bash "$SYNC" apply; then
+  echo "    -> configuration nginx conforme au dépôt"
+else
+  rc=$?
+  echo
+  if [[ "$rc" -eq 2 || "$rc" -eq 127 ]]; then
+    # Codes d'appel : manifeste ou script absent / malformé. nginx-sync.sh
+    # s'arrête avant d'ouvrir /etc/nginx — dire « restauré » ici serait faux.
+    echo "    ERREUR d'appel de nginx-sync.sh (code $rc) : script ou manifeste"
+    echo "    absent ou malformé. RIEN n'a été modifié dans /etc/nginx."
+    echo "    La cause exacte est dans le message juste au-dessus."
+  else
+    echo "    ATTENTION : l'application de la configuration nginx a échoué."
+    echo "    L'état précédent a été rétabli (voir les ALERTES ci-dessus)."
+    echo "    Cause la plus fréquente : certificat TLS absent, ou un vhost d'un"
+    echo "    AUTRE site déjà cassé sur le disque — nginx -t teste l'ensemble."
+    echo "    Lire le fichier et la ligne que nginx -t nomme ci-dessus."
+    echo "    Le reste de l'installation est en place. Une fois corrigé :"
+    echo "      sudo bash $SYNC apply"
+  fi
+  echo
+  ECHEC_NGINX=1
+fi
 
 echo
 sleep 3
 systemctl --no-pager --lines=3 status eventmap || true
 echo
-echo "Santé locale :"
-curl -s http://127.0.0.1:8000/health | head -c 300 || echo "(pas encore prêt)"
-echo
+# Sonde applicative qui compte réellement. L'ancienne (`curl ... || echo "(pas
+# encore prêt)"`) ne pouvait jamais faire échouer le script : le script sortait
+# en 0 avec un service mort. Le code de retour était donc sensible à la dérive
+# nginx et aveugle au composant le plus critique. Aligné sur observatory.
+code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:8000/health || echo 000)
+echo "Sonde locale /health : $code"
+ECHEC_APP=0
+[[ "$code" == "200" ]] || { echo "    le service ne répond pas." >&2; ECHEC_APP=1; }
+
+# Des `if` et non `[[ ... ]] && echo` : sous set -e, un test faux en dernière
+# position ferait sortir en 1 un script pourtant réussi. Le piège s'est déjà
+# présenté deux fois dans ce chantier.
+if [[ "$ECHEC_APP" -eq 1 || "$ECHEC_NGINX" -eq 1 ]]; then
+  echo
+  if [[ "$ECHEC_APP" -eq 1 ]]; then
+    echo "ÉCHEC : le service eventmap ne répond pas — voir plus haut." >&2
+  fi
+  if [[ "$ECHEC_NGINX" -eq 1 ]]; then
+    echo "ÉCHEC : la configuration nginx n'a pas pu être appliquée — voir plus haut." >&2
+  fi
+  exit 1
+fi
+echo "eventmap installé et actif."

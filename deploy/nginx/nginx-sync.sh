@@ -110,6 +110,25 @@ for i in "${!srcs[@]}"; do
   fi
 done
 
+# Le LIEN D'ACTIVATION fait partie de l'etat compare, au meme titre que les
+# fichiers. Sans cela, un site dont les fichiers sont conformes mais dont le
+# lien manque — ou pointe ailleurs — etait declare « aucune derive », et
+# `apply` court-circuitait avant meme de reposer le lien : le site n'etait pas
+# servi et l'outil annoncait que tout allait bien.
+if [[ ! -L "$LIEN" ]]; then
+  if [[ -e "$LIEN" ]]; then
+    echo "  LIEN ANORMAL : $LIEN existe mais n'est pas un lien symbolique"
+  else
+    echo "  LIEN MANQUANT sur la VM : $LIEN  (le site n'est pas servi)"
+  fi
+  drift=1
+elif [[ "$(readlink "$LIEN")" != "$SITE_CONF" ]]; then
+  echo "  LIEN DEVIE : $LIEN -> $(readlink "$LIEN")  (attendu : $SITE_CONF)"
+  drift=1
+else
+  echo "  conforme : $LIEN -> $SITE_CONF"
+fi
+
 if [[ "$ACTION" == "check" ]]; then
   if [[ "$drift" -eq 0 ]]; then
     echo "==> Aucune derive."
@@ -195,8 +214,11 @@ restaurer() {
     fi
   else
     echo "==> ALERTE : la configuration en place ne passe pas nginx -t." >&2
-    echo "    nginx tourne encore sur sa config en memoire ; NE PAS le redemarrer" >&2
-    echo "    avant d'avoir corrige $SITE_CONF a la main." >&2
+    echo "    nginx tourne encore sur sa config en memoire ; NE PAS le redemarrer." >&2
+    echo "    $SITE_CONF vient d'etre restaure a l'identique : si nginx -t echoue" >&2
+    echo "    encore, la cause est AILLEURS. Lire le fichier et la ligne que nginx -t" >&2
+    echo "    nomme ci-dessus — ce reverse proxy est partage par plusieurs sites, et" >&2
+    echo "    le vhost fautif peut tres bien ne pas etre celui qu'on deployait." >&2
   fi
 
   # Le mot de la fin doit dire la verite : c'est la ligne que l'operateur lit.
@@ -213,6 +235,12 @@ restaurer() {
     done
     if [[ "$recharge_ok" -eq 1 ]]; then
       echo "==> Etat d'origine retabli et nginx recharge." >&2
+    else
+      # Les fichiers sont bien revenus, mais nginx n'a pas pu etre recharge :
+      # sans cette ligne, la derniere chose lue serait une ALERTE technique,
+      # sans dire ce qui est vrai — l'etat sur le disque, lui, est bon.
+      echo "==> Etat d'origine retabli sur le disque, mais nginx N'A PAS ete recharge." >&2
+      echo "    Il continue de servir sa configuration en memoire." >&2
     fi
   else
     echo "==> ETAT D'ORIGINE NON RETABLI — voir les ALERTES ci-dessus." >&2

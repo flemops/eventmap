@@ -116,6 +116,12 @@ case "$ETAT" in
      ln -sfn "/etc/nginx/sites-available/$SITE-secours" "$LIEN" ;;
   D) ancienne_config; ln -sfn "$SITE_CONF" "$LIEN"
      rm -rf /etc/nginx/snippets; : > /etc/nginx/snippets ;;
+  E) # Fichiers CONFORMES au depot, mais lien d'activation ABSENT : le site
+     # n'est pas servi. Le piege est que rien ne differe cote fichiers.
+     rm -f "$LIEN" ;;
+  F) # Fichiers conformes, lien present mais DIRIGE AILLEURS.
+     echo "# config de secours" > "/etc/nginx/sites-available/$SITE-secours"
+     ln -sfn "/etc/nginx/sites-available/$SITE-secours" "$LIEN" ;;
   *) echo "ETAT inconnu : $ETAT" >&2; exit 91 ;;
 esac
 
