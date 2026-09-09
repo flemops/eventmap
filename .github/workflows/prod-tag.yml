@@ -20,5 +20,9 @@ jobs:
       runtime: python
       version: "3.10"
       install_cmd: pip install -r requirements.txt
-      test_cmd: pytest
+      # "pytest" nu ne met pas la racine du dépôt sur sys.path (pas de
+      # pyproject.toml/pytest.ini ici) : tests/test_core.py qui importe
+      # `cultures`/`db`/`main` échouerait en ModuleNotFoundError. "python -m
+      # pytest" l'ajoute (CWD en sys.path[0]).
+      test_cmd: python -m pytest
       tag_prod: ${{ inputs.tag_prod }}
