@@ -1,13 +1,23 @@
 # Toutes les dépendances sont en pur Python : rien à compiler sur ARM aarch64.
-fastapi>=0.115
-uvicorn[standard]>=0.30
-httpx>=0.27
-icalendar>=6.0
-python-dateutil>=2.9
-PyYAML>=6.0
+#
+# Épinglées en == (pas >=) depuis le 09/09/2026 : le déploiement continu
+# généralisé (voir ETAT-CHANTIERS.md du dépôt atelier-claude) fait
+# `pip install -r requirements.txt` aussi bien pour le déploiement que pour
+# le ROLLBACK. En >=, pip considère une version déjà installée plus récente
+# comme satisfaisante et ne redescend jamais — un rollback restaurerait le
+# code mais garderait une dépendance cassée par une release amont, gelant
+# le CD en quarantaine sans jamais réparer quoi que ce soit. Versions =
+# celles vérifiées en production (`pip freeze` sur /opt/eventmap/.venv).
+# Même logique déjà appliquée à observatory.
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+httpx==0.28.1
+icalendar==7.3.0
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
 
 # Optionnel — scrape.py uniquement, jamais chargé sans ANTHROPIC_API_KEY
 # anthropic>=0.40
 
 # Développement
-pytest>=8.0
+pytest==9.1.1
