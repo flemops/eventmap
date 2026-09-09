@@ -1,5 +1,8 @@
 # EventMap — Paris ce soir
 
+<!-- déploiement continu (pull-based) actif depuis le 09/09/2026 -->
+
+
 Agrégateur d'événements **Paris intra-muros**, conçu contre la paralysie du
 choix : **une vue « ce soir, à 2 km » par défaut, jamais un catalogue.**
 
