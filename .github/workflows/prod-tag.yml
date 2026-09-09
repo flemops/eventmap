@@ -25,4 +25,8 @@ jobs:
       # `cultures`/`db`/`main` échouerait en ModuleNotFoundError. "python -m
       # pytest" l'ajoute (CWD en sys.path[0]).
       test_cmd: python -m pytest
-      tag_prod: ${{ inputs.tag_prod }}
+      # == true, pas juste inputs.tag_prod : sur un déclenchement push (pas
+      # workflow_dispatch), inputs.tag_prod vaut null, pas false — un null
+      # passé à un paramètre booléen du reusable workflow invalide tout le
+      # fichier (0 job créé, "workflow file issue").
+      tag_prod: ${{ inputs.tag_prod == true }}
