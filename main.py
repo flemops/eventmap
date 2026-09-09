@@ -339,6 +339,10 @@ def api_categories():
 
 @app.get("/health")
 def health():
+    # Panne volontaire, temporaire : preuve du rollback automatique du CD
+    # généralisé (voir ETAT-CHANTIERS.md). Ce commit ne doit jamais rester
+    # sur master plus longtemps que le temps du test.
+    raise RuntimeError("drille de rollback volontaire — CD generalise 09/09/2026")
     with db.session() as con:
         s = db.stats(con)
         feeds = db.list_feeds(con, enabled_only=False)
