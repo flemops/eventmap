@@ -1,6 +1,6 @@
 # EventMap — Paris ce soir
 
-<!-- déploiement continu (pull-based) actif depuis le 09/09/2026, rollback vérifié -->
+<!-- déploiement continu (pull-based) actif depuis le 09/09/2026, rollback vérifié, script durci -->
 
 
 Agrégateur d'événements **Paris intra-muros**, conçu contre la paralysie du
