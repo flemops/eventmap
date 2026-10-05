@@ -27,7 +27,11 @@
     } catch {
       return;
     }
-    const enPanne = ((sante.refresh && sante.refresh.last_results) || []).filter((s) => s && s.ok === false);
+    // Multi-ville : une source en panne à Jeddah ne concerne pas la page de Paris.
+    let ville = "paris";
+    try { ville = JSON.parse(document.getElementById("em-city").textContent).city.id; } catch { /* page sans ville */ }
+    const enPanne = ((sante.refresh && sante.refresh.last_results) || [])
+      .filter((s) => s && s.ok === false && (!s.city || s.city === ville));
     if (!enPanne.length) return;
 
     // « refresh » : c'est le cycle de mise a jour lui-meme qui s'est

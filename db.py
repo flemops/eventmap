@@ -39,6 +39,22 @@ CREATE TABLE IF NOT EXISTS events (
     updated_at  TEXT,
     ingested_at TEXT NOT NULL,
     doublon_de  INTEGER REFERENCES events(id),
+    -- Multi-ville (13.37) : jamais de requête sans city_id.
+    city_id      TEXT NOT NULL DEFAULT 'paris',
+    country_code TEXT,
+    currency     TEXT,
+    price_min    REAL,
+    price_max    REAL,
+    booking_url  TEXT,
+    lang         TEXT,                      -- langue du titre/description de base
+    i18n         TEXT,                      -- JSON {"ar": {"title":..,"description":..}, ...}
+    status       TEXT NOT NULL DEFAULT 'active',  -- active|cancelled|postponed|expired|stale
+    geo_source   TEXT,                      -- source|venue_ref|geocoder
+    venue_id     TEXT,                      -- lieu canonique (venues/<ville>.yaml)
+    first_seen   TEXT,                      -- provenance (13.46)
+    last_changed TEXT,
+    content_hash TEXT,
+    dedup_reason TEXT,
     UNIQUE (source, source_id, start)
 );
 CREATE INDEX IF NOT EXISTS idx_events_start ON events (start);
@@ -49,7 +65,13 @@ CREATE TABLE IF NOT EXISTS source_health (
     last_count    INTEGER NOT NULL DEFAULT 0,
     last_nonempty TEXT,                     -- dernier cycle ayant rapporte >=1
     empty_streak  INTEGER NOT NULL DEFAULT 0,
-    updated_at    TEXT NOT NULL
+    updated_at    TEXT NOT NULL,
+    city_id       TEXT,
+    last_ok       TEXT,                     -- dernier cycle SANS erreur (même vide)
+    last_error    TEXT,
+    error_streak  INTEGER NOT NULL DEFAULT 0,
+    last_valid    INTEGER NOT NULL DEFAULT 0,   -- événements valides au dernier cycle
+    geo_missing   INTEGER NOT NULL DEFAULT 0    -- sans coordonnées au dernier cycle
 );
 
 CREATE TABLE IF NOT EXISTS feeds (
@@ -62,7 +84,9 @@ CREATE TABLE IF NOT EXISTS feeds (
     last_error    TEXT,
     error_count   INTEGER NOT NULL DEFAULT 0,
     etag          TEXT,
-    last_modified TEXT
+    last_modified TEXT,
+    feed_id       TEXT,
+    city_id       TEXT NOT NULL DEFAULT 'paris'
 );
 """
 
@@ -88,6 +112,18 @@ class Event:
     category: str = "other"
     url: str | None = None
     updated_at: datetime | None = None
+    # --- schéma normalisé multi-ville (13.4) --------------------------------
+    city_id: str = "paris"
+    country_code: str | None = None
+    currency: str | None = None
+    price_min: float | None = None
+    price_max: float | None = None
+    booking_url: str | None = None
+    lang: str | None = None
+    i18n: dict | None = None        # {"ar": {"title": .., "description": ..}}
+    status: str = "active"
+    geo_source: str | None = None
+    venue_id: str | None = None
 
     def __post_init__(self) -> None:
         self.start = _to_utc(self.start)
@@ -130,6 +166,45 @@ def _migrate(con: sqlite3.Connection) -> None:
     if "doublon_de" not in cols:
         con.execute("ALTER TABLE events ADD COLUMN doublon_de INTEGER REFERENCES events(id)")
 
+    # --- multi-ville (13.37) ---------------------------------------------
+    # DEFAULT 'paris' sur la colonne : toutes les lignes déjà en base (QFAP +
+    # FICEP, donc 100 % Paris) sont rattachées à Paris par SQLite lui-même, sans
+    # réécriture ni fenêtre où une ligne n'aurait pas de ville.
+    added = {
+        "city_id": "TEXT NOT NULL DEFAULT 'paris'",
+        "country_code": "TEXT", "currency": "TEXT", "price_min": "REAL", "price_max": "REAL",
+        "booking_url": "TEXT", "lang": "TEXT", "i18n": "TEXT",
+        "status": "TEXT NOT NULL DEFAULT 'active'", "geo_source": "TEXT", "venue_id": "TEXT",
+        "first_seen": "TEXT", "last_changed": "TEXT", "content_hash": "TEXT", "dedup_reason": "TEXT",
+    }
+    first_run = "first_seen" not in cols
+    for name, decl in added.items():
+        if name not in cols:
+            con.execute(f"ALTER TABLE events ADD COLUMN {name} {decl}")
+    if first_run:
+        # Une seule fois : connect() tourne à chaque requête, on ne rebalaie
+        # pas 16 000 lignes à chaque fois.
+        con.execute("UPDATE events SET first_seen = ingested_at WHERE first_seen IS NULL")
+        con.execute("UPDATE events SET country_code = 'FR' WHERE country_code IS NULL")
+
+    fcols = {r["name"] for r in con.execute("PRAGMA table_info(feeds)")}
+    for name, decl in {"feed_id": "TEXT", "city_id": "TEXT NOT NULL DEFAULT 'paris'"}.items():
+        if name not in fcols:
+            con.execute(f"ALTER TABLE feeds ADD COLUMN {name} {decl}")
+
+    hcols = {r["name"] for r in con.execute("PRAGMA table_info(source_health)")}
+    for name, decl in {"city_id": "TEXT", "last_ok": "TEXT", "last_error": "TEXT",
+                       "error_streak": "INTEGER NOT NULL DEFAULT 0",
+                       "last_valid": "INTEGER NOT NULL DEFAULT 0",
+                       "geo_missing": "INTEGER NOT NULL DEFAULT 0"}.items():
+        if name not in hcols:
+            con.execute(f"ALTER TABLE source_health ADD COLUMN {name} {decl}")
+
+    # Index créés ICI et pas dans SCHEMA : sur une base existante, la colonne
+    # n'existe qu'une fois les ALTER passés.
+    con.execute("CREATE INDEX IF NOT EXISTS idx_events_city_start ON events (city_id, start)")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_events_city_status ON events (city_id, status)")
+
 
 @contextmanager
 def session(path: str = DB_PATH) -> Iterator[sqlite3.Connection]:
@@ -157,14 +232,30 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float |
 
 # --------------------------------------------------------------------- events
 
+def _content_hash(e: Event) -> str:
+    """Empreinte du contenu affichable : sert à dater la dernière modification
+    RÉELLEMENT détectée (13.46), pas la dernière fois qu'on a revu la ligne."""
+    import hashlib
+    import json
+    parts = [e.title, e.description, _iso(e.start), _iso(e.end), e.venue, e.address,
+             e.lat, e.lon, e.price_type, e.price_min, e.price_max, e.currency,
+             e.url, e.booking_url, e.status, json.dumps(e.i18n, sort_keys=True, ensure_ascii=False)]
+    return hashlib.sha1("".join("" if p is None else str(p) for p in parts).encode()).hexdigest()[:16]
+
+
 def upsert_events(con: sqlite3.Connection, events: list[Event]) -> int:
     """Insère ou met à jour. Retourne le nombre de lignes touchées."""
+    import json
     now = _iso(datetime.now(timezone.utc))
     rows = [
         (
             e.source, e.source_id, _iso(e.start), _iso(e.end), e.title,
             e.description, e.venue, e.address, e.city, e.lat, e.lon,
             e.price_type, e.category, e.url, _iso(e.updated_at), now,
+            e.city_id, e.country_code, e.currency, e.price_min, e.price_max,
+            e.booking_url, e.lang,
+            json.dumps(e.i18n, ensure_ascii=False) if e.i18n else None,
+            e.status, e.geo_source, e.venue_id, now, now, _content_hash(e),
         )
         for e in events
     ]
@@ -172,8 +263,12 @@ def upsert_events(con: sqlite3.Connection, events: list[Event]) -> int:
         """
         INSERT INTO events (source, source_id, start, end, title, description,
                             venue, address, city, lat, lon, price_type,
-                            category, url, updated_at, ingested_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            category, url, updated_at, ingested_at,
+                            city_id, country_code, currency, price_min, price_max,
+                            booking_url, lang, i18n, status, geo_source, venue_id,
+                            first_seen, last_changed, content_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (source, source_id, start) DO UPDATE SET
             end = excluded.end, title = excluded.title,
             description = excluded.description, venue = excluded.venue,
@@ -181,7 +276,15 @@ def upsert_events(con: sqlite3.Connection, events: list[Event]) -> int:
             lat = excluded.lat, lon = excluded.lon,
             price_type = excluded.price_type, category = excluded.category,
             url = excluded.url, updated_at = excluded.updated_at,
-            ingested_at = excluded.ingested_at
+            ingested_at = excluded.ingested_at,
+            city_id = excluded.city_id, country_code = excluded.country_code,
+            currency = excluded.currency, price_min = excluded.price_min,
+            price_max = excluded.price_max, booking_url = excluded.booking_url,
+            lang = excluded.lang, i18n = excluded.i18n, status = excluded.status,
+            geo_source = excluded.geo_source, venue_id = excluded.venue_id,
+            last_changed = CASE WHEN events.content_hash IS excluded.content_hash
+                                THEN events.last_changed ELSE excluded.last_changed END,
+            content_hash = excluded.content_hash
         """,
         rows,
     )
@@ -226,12 +329,20 @@ def search(
     radius_km: float,
     start_from: datetime,
     start_to: datetime,
+    city_id: str = "paris",
     price_type: str | None = None,
-    category: str | None = None,
+    category: str | list[str] | tuple[str, ...] | None = None,
     venues: list[str] | None = None,
+    statuses: tuple[str, ...] = ("active",),
     limit: int = 200,
 ) -> list[dict]:
-    """Événements dans le rayon et la fenêtre, triés par distance puis date."""
+    """Événements d'UNE ville, dans le rayon et la fenêtre, triés par date puis distance.
+
+    `city_id` est toujours appliqué (13.38) : une requête Paris ne peut pas
+    renvoyer un événement de Jeddah, ni l'inverse, quel que soit le centre ou le
+    rayon demandé. Les statuts non actifs (annulé, reporté, périmé) ne sortent
+    jamais par défaut.
+    """
     # Paramètres nommés : l'ordre des "?" n'a plus d'importance et la requête
     # reste lisible quand on ajoute un filtre.
     # Un événement est pertinent s'il *chevauche* la fenêtre, pas seulement
@@ -243,6 +354,7 @@ def search(
     # deux formats bruts donne un ordre lexicographique faux. On passe tout
     # par julianday() pour comparer des nombres, pas des chaînes.
     clauses = [
+        "city_id = :city_id",
         "lat IS NOT NULL",
         # Doublon inter-sources réversible (voir sources.dedup_inter_source) :
         # jamais supprimé, seulement écarté à la lecture.
@@ -252,17 +364,24 @@ def search(
         "haversine_km(lat, lon, :lat, :lon) <= :radius",
     ]
     params: dict = {
+        "city_id": city_id,
         "lat": lat, "lon": lon, "radius": radius_km,
         "start_from": _iso(_to_utc(start_from)),
         "start_to": _iso(_to_utc(start_to)),
         "limit": limit,
     }
+    if statuses:
+        keys = [f"status_{i}" for i in range(len(statuses))]
+        clauses.append("status IN (" + ", ".join(f":{k}" for k in keys) + ")")
+        params.update(dict(zip(keys, statuses)))
     if price_type:
         clauses.append("price_type = :price_type")
         params["price_type"] = price_type
     if category:
-        clauses.append("category = :category")
-        params["category"] = category
+        cats = [category] if isinstance(category, str) else list(category)
+        keys = [f"cat_{i}" for i in range(len(cats))]
+        clauses.append("category IN (" + ", ".join(f":{k}" for k in keys) + ")")
+        params.update(dict(zip(keys, cats)))
 
     if venues:
         # Filtre par liste de lieux : c'est ainsi qu'on filtre par culture,
@@ -277,6 +396,8 @@ def search(
         f"""
         SELECT id, source, source_id, start, end, title, description, venue,
                address, city, lat, lon, price_type, category, url,
+               city_id, currency, price_min, price_max, booking_url, lang, i18n,
+               status, geo_source, venue_id, ingested_at AS last_seen, first_seen, last_changed,
                haversine_km(lat, lon, :lat, :lon) AS distance_km
         FROM events
         WHERE {' AND '.join(clauses)}
@@ -292,26 +413,75 @@ SOURCE_SILENT_DAYS = int(os.environ.get("EVENTMAP_SOURCE_SILENT_DAYS", "3"))
 
 
 def record_source_health(con: sqlite3.Connection, source: str, count: int,
-                         now: datetime) -> None:
+                         now: datetime, *, city_id: str | None = None,
+                         valid: int | None = None, geo_missing: int = 0) -> None:
     """Trace ce qu'une source a rapporte, meme quand elle rapporte zero.
 
     C'est la seule trace du mode de panne le plus dangereux : un parseur HTML
     qui casse apres une refonte de site ne leve aucune erreur, il renvoie une
     liste vide. `last_ok` reste vert, le journal reste muet.
+
+    Par ville et par source (13.53) : `last_ok` (dernier cycle sans erreur),
+    `last_nonempty` (dernière donnée reçue), `last_valid` (événements valides),
+    `geo_missing` (géocodage échoué), `error_streak` remis à zéro.
     """
     iso = _iso(_to_utc(now))
     con.execute(
         """
-        INSERT INTO source_health (source, last_count, last_nonempty, empty_streak, updated_at)
-        VALUES (:s, :c, CASE WHEN :c > 0 THEN :t END, CASE WHEN :c > 0 THEN 0 ELSE 1 END, :t)
+        INSERT INTO source_health (source, last_count, last_nonempty, empty_streak, updated_at,
+                                   city_id, last_ok, last_error, error_streak, last_valid, geo_missing)
+        VALUES (:s, :c, CASE WHEN :c > 0 THEN :t END, CASE WHEN :c > 0 THEN 0 ELSE 1 END, :t,
+                :city, :t, NULL, 0, :valid, :geo)
         ON CONFLICT(source) DO UPDATE SET
             last_count    = :c,
             last_nonempty = CASE WHEN :c > 0 THEN :t ELSE last_nonempty END,
             empty_streak  = CASE WHEN :c > 0 THEN 0 ELSE empty_streak + 1 END,
-            updated_at    = :t
+            updated_at    = :t,
+            city_id       = COALESCE(:city, city_id),
+            last_ok       = :t,
+            last_error    = NULL,
+            error_streak  = 0,
+            last_valid    = :valid,
+            geo_missing   = :geo
         """,
-        {"s": source, "c": count, "t": iso},
+        {"s": source, "c": count, "t": iso, "city": city_id,
+         "valid": count if valid is None else valid, "geo": geo_missing},
     )
+
+
+def record_source_failure(con: sqlite3.Connection, source: str, error: str, now: datetime,
+                          *, city_id: str | None = None) -> None:
+    """Un cycle en erreur ne touche NI `last_ok` NI `last_nonempty` : l'âge de
+    la dernière donnée reçue continue de grandir, c'est ce qu'on veut voir."""
+    iso = _iso(_to_utc(now))
+    con.execute(
+        """
+        INSERT INTO source_health (source, last_count, empty_streak, updated_at, city_id,
+                                   last_error, error_streak)
+        VALUES (:s, 0, 0, :t, :city, :e, 1)
+        ON CONFLICT(source) DO UPDATE SET
+            last_error   = :e,
+            error_streak = error_streak + 1,
+            city_id      = COALESCE(:city, city_id)
+        """,
+        {"s": source, "t": iso, "city": city_id, "e": (error or "unknown")[:300]},
+    )
+
+
+def source_report(con: sqlite3.Connection, city_id: str | None = None) -> list[dict]:
+    """État de chaque source, avec l'âge (en heures) de sa dernière donnée."""
+    q = """
+        SELECT source, city_id, last_count, last_valid, geo_missing, empty_streak,
+               error_streak, last_error, last_ok, last_nonempty,
+               ROUND((julianday('now') - julianday(last_nonempty)) * 24, 1) AS data_age_h,
+               ROUND((julianday('now') - julianday(last_ok)) * 24, 1)       AS ok_age_h
+        FROM source_health
+    """
+    params: tuple = ()
+    if city_id:
+        q += " WHERE city_id = ?"
+        params = (city_id,)
+    return [dict(r) for r in con.execute(q + " ORDER BY source", params)]
 
 
 def silent_sources(con: sqlite3.Connection, days: int = SOURCE_SILENT_DAYS) -> list[dict]:
@@ -335,31 +505,50 @@ def silent_sources(con: sqlite3.Connection, days: int = SOURCE_SILENT_DAYS) -> l
     return [dict(r) for r in rows]
 
 
-def stats(con: sqlite3.Connection) -> dict:
+def stats(con: sqlite3.Connection, city_id: str | None = None) -> dict:
+    where, params = ("WHERE city_id = ?", (city_id,)) if city_id else ("", ())
     row = con.execute(
-        """
+        f"""
         SELECT COUNT(*)                         AS total,
                COUNT(DISTINCT source)           AS sources,
                SUM(start >= datetime('now'))    AS upcoming,
                SUM(lat IS NULL)                 AS without_geo,
                MAX(ingested_at)                 AS last_ingest
-        FROM events
-        """
+        FROM events {where}
+        """,
+        params,
     ).fetchone()
     return dict(row)
+
+
+def stats_by_city(con: sqlite3.Connection) -> dict[str, dict]:
+    rows = con.execute(
+        """
+        SELECT city_id,
+               COUNT(*) AS total,
+               SUM(start >= datetime('now') AND status = 'active' AND doublon_de IS NULL) AS upcoming,
+               SUM(lat IS NULL) AS without_geo,
+               SUM(doublon_de IS NOT NULL) AS duplicates,
+               MAX(ingested_at) AS last_ingest
+        FROM events GROUP BY city_id
+        """
+    ).fetchall()
+    return {r["city_id"]: dict(r) for r in rows}
 
 
 # ---------------------------------------------------------------------- feeds
 
 def upsert_feed(con: sqlite3.Connection, url: str, kind: str,
-                name: str | None = None, city: str | None = None) -> None:
+                name: str | None = None, city: str | None = None,
+                feed_id: str | None = None, city_id: str = "paris") -> None:
     con.execute(
         """
-        INSERT INTO feeds (url, name, city, kind) VALUES (?, ?, ?, ?)
+        INSERT INTO feeds (url, name, city, kind, feed_id, city_id) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT (url) DO UPDATE SET name = excluded.name, city = excluded.city,
-                                       kind = excluded.kind
+                                       kind = excluded.kind, feed_id = excluded.feed_id,
+                                       city_id = excluded.city_id
         """,
-        (url, name, city, kind),
+        (url, name, city, kind, feed_id, city_id),
     )
 
 

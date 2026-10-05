@@ -156,7 +156,7 @@ def test_dedup_forte_merges_and_search_hides_loser(con):
     )
     db.upsert_events(con, [qfap, ficep])
     counts = sources.dedup_inter_source(con, now=t - timedelta(days=1))
-    assert counts == {"forte": 1, "faible": 0}
+    assert counts == {"forte": 1, "faible": 0, "traduction": 0}
 
     visible = db.search(con, lat=48.8546, lon=2.2926, radius_km=1,
                         start_from=t - timedelta(hours=1), start_to=t + timedelta(hours=1))
@@ -174,7 +174,7 @@ def test_dedup_keeps_distant_or_different_titled_events(con):
         db.Event(source="ics:x", source_id="c", title="Exposition photo", start=t, lat=48.861, lon=2.351),
     ])
     counts = sources.dedup_inter_source(con, now=t - timedelta(days=1))
-    assert counts == {"forte": 0, "faible": 0}
+    assert counts == {"forte": 0, "faible": 0, "traduction": 0}
     assert db.stats(con)["total"] == 3
 
 
@@ -498,7 +498,7 @@ def test_route_api_events_de_bout_en_bout(client, base_temp, monkeypatch):
     assert client.get("/api/events", params={**base, "culture": ","}).status_code == 404
 
 
-@pytest.mark.parametrize("chemin", ["/", "/carte"])
+@pytest.mark.parametrize("chemin", ["/", "/paris", "/paris/carte"])
 def test_pages_publiques_repondent_au_get_et_au_head(chemin, client):
     """HEAD rendait 405 (`allow: GET`) avant le 05/09/2026. Plusieurs
     verificateurs de liens et deplieurs d'URL l'envoient avant le GET : une page
@@ -509,7 +509,7 @@ def test_pages_publiques_repondent_au_get_et_au_head(chemin, client):
     assert client.head(chemin).status_code == 200
 
 
-@pytest.mark.parametrize("chemin", ["/", "/carte"])
+@pytest.mark.parametrize("chemin", ["/", "/paris/carte"])
 def test_pages_publiques_sont_indexables_et_partageables(chemin, client):
     """Non-regression du 05/09/2026 : un `<meta robots noindex>` datant du
     developpement etait servi en prod depuis le 23/08 sur les DEUX pages, et
@@ -532,7 +532,15 @@ def test_sitemap_liste_les_deux_pages(client):
     assert "xml" in r.headers["content-type"]
     assert r.text.count("<loc>") == 2
     assert f"<loc>{main.SITE}/</loc>" in r.text
-    assert f"<loc>{main.SITE}/carte</loc>" in r.text
+    assert f"<loc>{main.SITE}/paris/carte</loc>" in r.text
+
+
+def test_ancienne_url_carte_est_redirigee_definitivement(client):
+    """/carte existait avant le multi-ville : 301 vers la carte de Paris, pour que les
+    liens déjà partagés et le référencement suivent."""
+    r = client.get("/carte", follow_redirects=False)
+    assert r.status_code == 301
+    assert r.headers["location"] == "/paris/carte"
 
 
 def test_health_decrit_une_base_vide_sans_echouer(client):

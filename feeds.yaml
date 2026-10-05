@@ -14,18 +14,35 @@
 #               entrées à Arles, Bruxelles, Lyon) est filtré à l'ingestion
 #               plutôt que d'être cru sur parole.
 #
+# Champs multi-ville / exploitation (registry.py) :
+#   id             : identifiant stable, cité par cities.yaml (`sources:`)
+#   city           : ville servie (cities.yaml). Défaut : paris
+#   authorization  : ok | pending | refused. Seule `ok` est interrogée —
+#                    `enabled: true` ne suffit pas (13.7)
+#   priority       : plus haut = plus fiable ; départage deux sources en conflit
+#   refresh_hours, timeout_s, retries, min_interval_s : politique d'ingestion
+#
 # Champs documentaires seulement (ignorés par le code, gardés pour mémoire) :
 #   license, status, checked, note, attribution
 
 feeds:
-  - url: "https://openagenda.com/agendas/61665301/events.v2.ics?relative[]=upcoming"
+  - id: ficep
+    city: paris
+    authorization: ok
+    priority: 5
+    refresh_hours: 6
+    timeout_s: 120
+    retries: 1
+    min_interval_s: 1.0
+    url: "https://openagenda.com/agendas/61665301/events.v2.ics?relative[]=upcoming"
     type: ics
     name: "FICEP — instituts culturels étrangers de Paris"
     enabled: true
     license: "ouverte (documentation OpenAgenda)"
     status: ok
     checked: "2026-09-03"
-    attribution: "FICEP via OpenAgenda — licence ouverte"
+    attribution: "FICEP via OpenAgenda (licence ouverte)"
+    home: "https://openagenda.com/agendas/61665301"
     # Vérifié en direct le 03/09/2026 : 149 VEVENT à venir, 149 lignes GEO:,
     # aucune clé API. Sans `relative[]=upcoming`, le même export renvoie
     # l'historique complet (836 VEVENT) — inutile ici.
@@ -49,3 +66,55 @@ feeds:
 #   - OpenAgenda : plusieurs agendas parisiens publics, mais l'API exige une clé
 #
 # Règles inchangées : robots.txt, User-Agent identifiable, ≤ 1 req/s/domaine.
+
+# --- JEDDAH : sources ÉVALUÉES le 06/10/2026, aucune n'est autorisée ----------
+# Détail et preuves : docs/jeddah-sources.md. Ces entrées ne sont jamais
+# interrogées (`authorization` ≠ ok) ; elles existent pour que la décision soit
+# lisible dans le code, et pour qu'une autorisation écrite se traduise par UN
+# changement ici (authorization: ok + un connecteur).
+
+  - id: visitsaudi-jeddah
+    city: jeddah
+    type: jsonld
+    url: "https://www.visitsaudi.com/en/jeddah/events"
+    name: "Visit Saudi — événements de Jeddah"
+    enabled: false
+    authorization: refused
+    status: bloquée
+    checked: "2026-10-06"
+    note: >-
+      robots.txt autorise les pages, mais les conditions d'utilisation limitent
+      la réutilisation à un usage personnel non commercial et interdisent de
+      stocker ou reproduire la plateforme sur un autre site sans accord écrit
+      préalable. L'API /bin/api/ est disallow. 12 pages d'événements pour Jeddah
+      au 06/10/2026, dates sans heure. Accord écrit requis.
+
+  - id: hayyjameel
+    city: jeddah
+    type: jsonld
+    url: "https://hayyjameel.org/whats-on/"
+    name: "Hayy Jameel (Art Jameel) — programme"
+    enabled: false
+    authorization: refused
+    status: bloquée
+    checked: "2026-10-06"
+    note: >-
+      Aucun flux ni balisage Event (pages WordPress, dates dans le gabarit). Les
+      conditions d'utilisation (Art Jameel L.L.C.) réservent tous les droits sur
+      le contenu et exigent une licence écrite pour tout usage non personnel.
+      L'API REST de WordPress est fermée (401). Licence écrite requise.
+
+  - id: webook
+    city: jeddah
+    type: jsonld
+    url: "https://webook.com/"
+    name: "webook.com — billetterie"
+    enabled: false
+    authorization: pending
+    status: bloquée
+    checked: "2026-10-06"
+    note: >-
+      Application monopage sans balisage Event ni flux ; les données passent par
+      api.webook.com, interface privée non documentée. Pas de méthode d'accès
+      stable ni autorisée : rien à bricoler. À reconsidérer si webook publie une
+      API partenaire.

@@ -1,0 +1,80 @@
+# Une entrée par ville. C'est le SEUL endroit où une ville se déclare : le code
+# ne contient aucun « if city == ... ». Ajouter une troisième ville = une entrée
+# ici + ses sources dans feeds.yaml (voir docs/multi-ville.md).
+#
+# Champs
+#   enabled           : false = ville construite mais éteinte (« dark launch »).
+#                       Elle n'apparaît ni sur le choix de ville, ni dans
+#                       /api/cities, et ses routes rendent 404. Surcharges sans
+#                       redéploiement, dans /etc/eventmap.env :
+#                         EVENTMAP_CITIES_ENABLED=jeddah    allume
+#                         EVENTMAP_CITIES_DISABLED=jeddah   éteint (gagne toujours)
+#   timezone          : IANA. Toutes les fenêtres (« ce soir », « demain »,
+#                       « week-end ») se calculent dans CE fuseau.
+#   weekend_days      : jours du week-end local, 0 = lundi. Jeddah : vendredi (4)
+#                       et samedi (5). Deux jours consécutifs.
+#   night_cutoff_hour : heure locale où « la soirée » se termine. 0 = minuit
+#                       (comportement historique de Paris). 5 = un événement à
+#                       01h00 fait encore partie de « ce soir ».
+#   home              : page d'accueil de la ville — « accueil » (cultures +
+#                       catégories) ou « carte » (carte + liste d'emblée).
+#   sources           : identifiants (`id`) des entrées de feeds.yaml.
+#   stale_after_hours : au-delà, une donnée jamais revue par sa source est
+#                       signalée « périmée » à l'utilisateur.
+
+cities:
+  paris:
+    enabled: true
+    country: FR
+    names: {fr: "Paris", en: "Paris", ar: "باريس"}
+    timezone: Europe/Paris
+    currency: EUR
+    languages: [fr]
+    default_language: fr
+    map_center: {lat: 48.8584, lon: 2.3470}
+    default_zoom: 13
+    radius_options_km: [1, 2, 4, 8]
+    max_radius_km: 8
+    weekend_days: [5, 6]
+    night_cutoff_hour: 0
+    home: accueil
+    default_price: free
+    features: {cultures: true}
+    stale_after_hours: 36
+    sources: [qfap, ficep]
+
+  jeddah:
+    # Éteinte tant qu'aucune source n'est autorisée par écrit : voir
+    # docs/jeddah-sources.md (Visit Saudi et Art Jameel interdisent la
+    # réutilisation automatisée sans licence ; Webook n'expose pas d'accès
+    # public stable). Le moteur est prêt, il n'y a pas de données à afficher.
+    enabled: false
+    country: SA
+    names: {en: "Jeddah", ar: "جدة", fr: "Djeddah"}
+    timezone: Asia/Riyadh
+    currency: SAR
+    languages: [en, ar]
+    default_language: en
+    map_center: {lat: 21.5433, lon: 39.1728}
+    default_zoom: 11
+    radius_options_km: [2, 5, 10, 30]
+    max_radius_km: 30
+    weekend_days: [4, 5]
+    night_cutoff_hour: 5
+    home: carte
+    default_price: ""
+    features: {cultures: false}
+    # Premier niveau de catégories affiché (13.23). Les clés sont celles du
+    # vocabulaire commun (sources.CATEGORY_KEYWORDS) ; seules les catégories qui
+    # ont de vrais événements à venir sont montrées.
+    category_groups:
+      concerts: [music]
+      culture-art: [expo, theatre, talk]
+      cinema: [cinema]
+      sports: [sport]
+      food-markets: [market]
+      workshops: [workshop]
+      family: [kids]
+      experiences: [other]
+    stale_after_hours: 36
+    sources: []

@@ -2,15 +2,14 @@
    Range les événements par culture d'origine puis par catégorie, et propose une
    vignette de carte qui renvoie vers /carte. Aucune donnée n'est stockée. */
 (() => {
-  const { CATEGORY_LABELS, esc, fmtTime, fmtDay, PRICE_LABEL } = window.EM_COMMON;
-  // Châtelet, rayon large : l'accueil montre tout Paris, pas les environs de l'utilisateur.
-  const CENTER = { lat: 48.8584, lon: 2.3470, radius: 8, when: "week" };
+  const { CATEGORY_LABELS, esc, fmtTime, fmtDay, PRICE_LABEL, CITY, api } = window.EM_COMMON;
+  // Centre de la ville, rayon large : l'accueil montre toute la ville, pas les environs de l'utilisateur.
+  const CENTER = { lat: CITY.center.lat, lon: CITY.center.lon, radius: CITY.max_radius_km, when: "week" };
 
   const $ = (s) => document.querySelector(s);
 
   async function loadEvents(extra = {}) {
-    const q = new URLSearchParams({ lat: CENTER.lat, lon: CENTER.lon, radius: CENTER.radius, when: CENTER.when, ...extra });
-    const r = await fetch(`/api/events?${q}`);
+    const r = await fetch(api("/api/events", { lat: CENTER.lat, lon: CENTER.lon, radius: CENTER.radius, when: CENTER.when, ...extra }));
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return (await r.json()).events || [];
   }

@@ -1,0 +1,2 @@
+leaflet.markercluster 1.5.3 - licence MIT - https://github.com/Leaflet/Leaflet.markercluster
+Fichiers copies tels quels depuis le paquet npm (dist/). Servis depuis ce depot : aucun CDN a l execution (CSP script-src self).

@@ -1,9 +1,13 @@
-"""EventMap FR — API FastAPI + boucle de rafraîchissement.
+"""EventMap — API FastAPI + boucle de rafraîchissement, moteur multi-ville.
 
 Deux responsabilités, volontairement séparées :
-- servir `/api/events` et le front statique (lecture seule sur SQLite) ;
-- rafraîchir les sources toutes les 6 h, dans une tâche de fond qui ne peut
-  jamais faire tomber l'API, quelle que soit la source qui casse.
+- servir `/api/events` et le front (lecture seule sur SQLite) ;
+- rafraîchir les sources dans une tâche de fond qui ne peut jamais faire
+  tomber l'API, quelle que soit la source qui casse.
+
+Une seule application sert toutes les villes (cities.yaml) : Paris, Jeddah, et
+la suivante sans changer une ligne de ce fichier. Toute lecture porte sur UNE
+ville (`city_id`), toute source appartient à UNE ville.
 """
 
 from __future__ import annotations
@@ -17,15 +21,19 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import yaml
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+import cities
 import cultures
 import db
+import pipeline
+import registry
+import render
 import sources
 import sources_paris
+import timewin
 
 log = logging.getLogger("eventmap")
 logging.basicConfig(
@@ -35,51 +43,78 @@ logging.basicConfig(
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
-FEEDS_FILE = Path(os.environ.get("EVENTMAP_FEEDS", BASE_DIR / "feeds.yaml"))
 REFRESH_INTERVAL = int(os.environ.get("EVENTMAP_REFRESH_SECONDS", str(6 * 3600)))
-TZ = ZoneInfo("Europe/Paris")
+TZ = ZoneInfo("Europe/Paris")          # conservé pour les tests historiques : Paris est la ville par défaut
+SITE = "https://eventmap.hamdy-tabsissi.com"
 
-# Périmètre : Paris intra-muros. Centre par défaut = Châtelet, et le rayon
-# maximal couvre tout Paris depuis le centre (~6 km jusqu'au périphérique)
-# sans déborder inutilement sur la petite couronne.
+# Compatibilité avec les appels sans ville (avant le multi-ville) : le centre de
+# Paris. Les valeurs réelles viennent de cities.yaml.
 DEFAULT_LAT, DEFAULT_LON = 48.8584, 2.3470
-MAX_RADIUS_KM = 8.0
+MAX_RADIUS_KM = 50.0                   # plafond GLOBAL ; chaque ville a le sien (cities.yaml)
 
 # État partagé du refresh, exposé par /health. Pas de verrou : une seule
 # tâche écrit, et les lectures concurrentes d'un dict sont sûres en CPython.
 _refresh_state: dict = {"running": False, "last_run": None, "last_results": [], "runs": 0,
-                        "dedup": {"forte": 0, "faible": 0}}
+                        "dedup": {"forte": 0, "faible": 0, "traduction": 0}}
 _refresh_lock = asyncio.Lock()
 
 
 # ------------------------------------------------------------------ refresh
 
-def _build_fetchers(con) -> dict[str, sources.Fetcher]:
-    """Assemble les connecteurs actifs : QFAP toujours, puis feeds.yaml."""
-    fetchers: dict[str, sources.Fetcher] = {"qfap": sources_paris.fetch}
-    _geo_bboxes: dict[str, dict] = {}
+def _build_fetchers(con, now: datetime | None = None
+                    ) -> tuple[dict[str, sources.Fetcher], dict[str, registry.SourceSpec]]:
+    """Assemble les connecteurs à lancer ce cycle : (fetchers, spec par clé).
 
-    if FEEDS_FILE.exists():
-        spec = yaml.safe_load(FEEDS_FILE.read_text(encoding="utf-8")) or {}
-        for feed in spec.get("feeds", []):
-            if not feed.get("enabled", True):
+    Une source est lancée si elle est autorisée, que sa ville est allumée, qu'elle
+    n'est pas coupée, qu'elle n'a pas été désactivée après trop d'échecs, ET
+    qu'elle est « due » selon sa cadence propre (`refresh_hours`).
+    """
+    now = now or datetime.now(timezone.utc)
+    specs = registry.load()
+    for problem in registry.validate(specs):
+        log.error("configuration des sources : %s", problem)
+
+    fetchers: dict[str, sources.Fetcher] = {}
+    by_key: dict[str, registry.SourceSpec] = {}
+    health = {r["source"]: r for r in db.source_report(con)}
+
+    for spec in specs:
+        if spec.kind != "qfap" and spec.enabled and spec.authorization == "ok":
+            db.upsert_feed(con, spec.url, spec.kind, name=spec.name, feed_id=spec.id,
+                           city_id=spec.city_id)
+
+    db_feeds = {f["url"]: f for f in db.list_feeds(con, enabled_only=True)}
+
+    for spec in specs:
+        reason = spec.why_not()
+        if reason:
+            log.debug("source %s non lancée : %s", spec.id, reason)
+            continue
+        if spec.kind == "qfap":
+            fetcher: sources.Fetcher = sources_paris.fetch
+        else:
+            feed = db_feeds.get(spec.url)
+            if feed is None:
+                continue                       # désactivée en base après des échecs répétés
+            if spec.kind == "ics":
+                fetcher = _ics_fetcher(spec.url, feed.get("etag"), feed.get("last_modified"),
+                                       geo_bbox=spec.geo_bbox)
+            elif spec.kind == "openagenda":
+                fetcher = (lambda c, _uid=spec.url.rsplit("/", 1)[-1]: sources.fetch_openagenda(c, _uid))
+            else:
+                continue       # `jsonld` et `llm` ne tournent que sur demande explicite
+        # Cadence : ne pas réinterroger une source plus souvent que `refresh_hours`.
+        # Tolérance d'un quart d'heure, sinon une source à 6 h est « pas due » à
+        # 5 h 59 et ne tourne qu'un cycle sur deux.
+        last_ok = (health.get(spec.key) or {}).get("last_ok")
+        if last_ok:
+            age_h = (now - datetime.fromisoformat(last_ok)).total_seconds() / 3600
+            if age_h < spec.refresh_hours - 0.25:
+                log.debug("source %s pas encore due (%.1f h < %.1f h)", spec.id, age_h, spec.refresh_hours)
                 continue
-            db.upsert_feed(con, feed["url"], feed.get("type", "ics"),
-                           name=feed.get("name"), city=feed.get("city"))
-            if feed.get("geo_bbox"):
-                _geo_bboxes[feed["url"]] = feed["geo_bbox"]
-
-    for feed in db.list_feeds(con, enabled_only=True):
-        url, kind = feed["url"], feed["kind"]
-        if kind == "ics":
-            fetchers[url] = _ics_fetcher(url, feed.get("etag"), feed.get("last_modified"),
-                                         geo_bbox=_geo_bboxes.get(url))
-        elif kind == "openagenda":
-            uid = url.rsplit("/", 1)[-1]
-            fetchers[url] = lambda c, _uid=uid: sources.fetch_openagenda(c, _uid)
-        # `jsonld` et `llm` sont gérés par discover/scrape, pas par la boucle
-        # de refresh : ils ne tournent que sur demande explicite.
-    return fetchers
+        fetchers[spec.key] = fetcher
+        by_key[spec.key] = spec
+    return fetchers, by_key
 
 
 def _ics_fetcher(url: str, etag: str | None, last_modified: str | None,
@@ -108,8 +143,13 @@ def _ics_fetcher(url: str, etag: str | None, last_modified: str | None,
     return fetch
 
 
+def _publish_priorities(specs: list[registry.SourceSpec]) -> None:
+    sources.set_priorities({("qfap" if s.kind == "qfap" else f"{s.kind}:{s.url}"): s.priority
+                            for s in specs})
+
+
 async def refresh() -> list[sources.SourceResult]:
-    """Un cycle complet : agrégation, dédoublonnage, upsert, purge, marquage."""
+    """Un cycle complet : agrégation, normalisation, dédoublonnage, upsert, purge, marquage."""
     if _refresh_lock.locked():
         log.info("refresh déjà en cours, cycle ignoré")
         return []
@@ -120,36 +160,53 @@ async def refresh() -> list[sources.SourceResult]:
         t0 = time.monotonic()
         try:
             with db.session() as con:
-                fetchers = _build_fetchers(con)
+                fetchers, by_key = _build_fetchers(con, started)
+            _publish_priorities(registry.load())
 
-            results = await sources.aggregate(fetchers)
+            policies = {k: {"timeout_s": s.timeout_s, "retries": s.retries} for k, s in by_key.items()}
+            intervals = {}
+            for s in by_key.values():
+                if s.url:
+                    from urllib.parse import urlsplit
+                    intervals[urlsplit(s.url).netloc] = s.min_interval_s
+            results = await sources.aggregate(fetchers, policies=policies, intervals=intervals)
 
             with db.session() as con:
                 all_events: list[db.Event] = []
+                dropped_total: dict[str, int] = {}
                 for r in results:
+                    spec = by_key.get(r.name)
+                    city_id = spec.city_id if spec else None
                     is_feed = r.name != "qfap"
                     if r.ok:
-                        all_events.extend(r.events)
+                        events, dropped = pipeline.normalize(r.events, city_id or cities.DEFAULT_CITY)
+                        for k, n in dropped.items():
+                            dropped_total[k] = dropped_total.get(k, 0) + n
+                        all_events.extend(events)
                         meta = getattr(fetchers[r.name], "meta", {}) if is_feed else {}
                         if is_feed:
                             db.mark_feed(con, r.name, ok=True,
                                          etag=meta.get("etag"), last_modified=meta.get("last_modified"))
-                        db.record_source_health(con, r.name, len(r.events), started)
+                        db.record_source_health(con, r.name, len(r.events), started, city_id=city_id,
+                                                valid=len(events),
+                                                geo_missing=sum(1 for e in events if e.lat is None))
                         # Un 304 ne renvoie rien : on ne purge surtout pas.
                         # Une source qui reussit mais renvoie ZERO non plus :
                         # `purge_stale` effacerait tout son contenu, et c'est
                         # exactement ce que fait un parseur casse en silence.
                         # On garde l'ancien contenu, quitte a le voir vieillir.
-                        if not meta.get("not_modified") and r.events:
-                            src = r.name if r.name == "qfap" else f"ics:{r.name}"
-                            db.purge_stale(con, src, started)
-                        elif not r.events:
+                        if not meta.get("not_modified") and events:
+                            for src in {e.source for e in events}:
+                                db.purge_stale(con, src, started)
+                        elif not r.events and not meta.get("not_modified"):
                             log.warning("source %s : 0 evenement alors qu'elle "
                                         "repond OK — purge annulee", r.name)
-                    elif is_feed:
-                        disabled = db.mark_feed(con, r.name, ok=False, error=r.error)
-                        if disabled:
-                            log.warning("flux désactivé après échecs répétés: %s", r.name)
+                    else:
+                        db.record_source_failure(con, r.name, r.error or "", started, city_id=city_id)
+                        if is_feed:
+                            disabled = db.mark_feed(con, r.name, ok=False, error=r.error)
+                            if disabled:
+                                log.warning("flux désactivé après échecs répétés: %s", r.name)
 
                 # Plus de fusion pré-upsert (D9) : toutes les sources sont
                 # écrites telles quelles, et dedup_inter_source() marque les
@@ -160,15 +217,18 @@ async def refresh() -> list[sources.SourceResult]:
 
             ok = sum(1 for r in results if r.ok)
             log.info("refresh terminé en %.1fs : %d/%d sources OK, %d créneaux, %d upserts, "
-                     "%d doublons forts + %d faibles marqués, %d passés purgés",
+                     "%d doublons forts + %d faibles + %d traductions marqués, %d passés purgés, écartés=%s",
                      time.monotonic() - t0, ok, len(results), len(all_events), n,
-                     dedup_counts["forte"], dedup_counts["faible"], purged)
+                     dedup_counts["forte"], dedup_counts["faible"], dedup_counts["traduction"],
+                     purged, dropped_total or "{}")
             _refresh_state["last_results"] = [
                 {"source": r.name, "ok": r.ok, "events": len(r.events),
-                 "duration_s": round(r.duration_s, 1), "error": r.error}
+                 "duration_s": round(r.duration_s, 1), "error": r.error,
+                 "city": (by_key[r.name].city_id if r.name in by_key else None)}
                 for r in results
             ]
             _refresh_state["dedup"] = dedup_counts
+            _refresh_state["dropped"] = dropped_total
             return results
         except Exception as exc:
             # Dernier filet : un bug dans refresh() lui-même ne doit pas tuer
@@ -204,6 +264,7 @@ async def refresh_loop() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.connect().close()  # crée le schéma au démarrage, pas à la première requête
+    _publish_priorities(registry.load())
     task = asyncio.create_task(refresh_loop(), name="refresh_loop")
     try:
         yield
@@ -215,30 +276,29 @@ async def lifespan(app: FastAPI):
             pass
 
 
-app = FastAPI(title="EventMap FR", version="0.1", lifespan=lifespan, docs_url="/api/docs", redoc_url=None)
+app = FastAPI(title="EventMap", version="0.2", lifespan=lifespan, docs_url="/api/docs", redoc_url=None)
 
 
-def _window(when: str, now: datetime) -> tuple[datetime, datetime]:
-    """Fenêtre temporelle en heure de Paris, renvoyée en UTC pour la base."""
-    local = now.astimezone(TZ)
-    day0 = local.replace(hour=0, minute=0, second=0, microsecond=0)
-    if when == "today":
-        # « ce soir » commence maintenant, pas à minuit : inutile de proposer
-        # un événement déjà commencé il y a trois heures.
-        start, end = local, day0 + timedelta(days=1)
-    elif when == "tomorrow":
-        start, end = day0 + timedelta(days=1), day0 + timedelta(days=2)
-    elif when == "weekend":
-        # Le week-end se termine lundi 00:00. S'il a déjà commencé, on part
-        # de maintenant ; sinon du samedi à venir.
-        monday = day0 + timedelta(days=(7 - local.weekday()))
-        saturday = monday - timedelta(days=2)
-        start, end = (local if local.weekday() >= 5 else saturday), monday
-    elif when == "week":
-        start, end = local, day0 + timedelta(days=7)
-    else:
-        raise HTTPException(400, f"when invalide: {when!r} (today|tomorrow|weekend|week)")
-    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+def _window(when: str, now: datetime, city: cities.City | None = None) -> tuple[datetime, datetime]:
+    """Fenêtre temporelle dans le fuseau de la ville, renvoyée en UTC pour la base.
+
+    Sans ville : Paris, comme avant le multi-ville (les tests historiques et les
+    appels directs ne changent pas).
+    """
+    try:
+        if city is None:
+            return timewin.window(when, now, TZ)
+        return timewin.window(when, now, city.tz, weekend_days=city.weekend_days,
+                              cutoff=city.night_cutoff_hour)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+def _city_or_404(city_id: str | None) -> cities.City:
+    c = cities.active(city_id)
+    if c is None:
+        raise HTTPException(404, f"ville inconnue ou indisponible : {city_id!r}")
+    return c
 
 
 def _venues_pour_cultures(culture: str | None) -> tuple[list[str], list[str] | None]:
@@ -292,43 +352,145 @@ def _ajoute_culture_cle(rows: list[dict], cles: list[str]) -> None:
         r["culture_cle"] = v["cle"] if v else None
 
 
+def _localize(row: dict, lang: str | None, city: cities.City) -> None:
+    """Titre/description dans la langue demandée SI la source en fournit une
+    version (jamais de traduction automatique). Sinon la version de base."""
+    import json
+    raw = row.pop("i18n", None)
+    alts = json.loads(raw) if raw else {}
+    row["languages"] = sorted({row.get("lang") or city.default_language, *alts})
+    if lang and lang in alts and lang != row.get("lang"):
+        alt = alts[lang]
+        row["title_original"] = row["title"]
+        row["title"] = alt.get("title") or row["title"]
+        row["description"] = alt.get("description") or row.get("description")
+        row["lang"] = lang
+
+
+def _data_state(con, city: cities.City, now: datetime) -> dict:
+    """L'état honnête des DONNÉES d'une ville — pour que « aucun événement » ne
+    soit jamais affiché quand la vraie réponse est « la source est en panne » (13.51).
+
+    unknown       : aucune source n'a encore été interrogée (démarrage) ;
+    ok            : toutes les sources répondent et leurs données sont fraîches ;
+    partial       : une partie des sources est en erreur ou en retard ;
+    stale         : plus aucune donnée fraîche ;
+    no_sources    : la ville n'a aucune source active.
+    """
+    specs = [s for s in registry.by_city(registry.load(), city.id) if s.runnable()]
+    if not specs:
+        return {"state": "no_sources", "sources": []}
+    report = {r["source"]: r for r in db.source_report(con, city.id)}
+    items = []
+    for s in specs:
+        r = report.get(s.key)
+        if r is None:
+            # Jamais interrogée (démarrage, source récemment allumée) : inconnu, pas « en retard ».
+            items.append({"id": s.id, "ok": None, "data_age_h": None, "error": False})
+            continue
+        age = r.get("data_age_h")
+        late = (age is not None and age > city.stale_after_hours) or r.get("error_streak", 0) >= 2
+        items.append({"id": s.id, "ok": not late, "data_age_h": age,
+                      "error": bool(r.get("last_error") and r.get("error_streak", 0) > 0)})
+    known = [i for i in items if i["ok"] is not None]
+    if not known:
+        return {"state": "unknown", "sources": items}
+    good = sum(1 for i in known if i["ok"])
+    state = "ok" if good == len(known) else ("partial" if good else "stale")
+    return {"state": state, "sources": items}
+
+
 @app.get("/api/events")
 def api_events(
-    lat: float = Query(DEFAULT_LAT, ge=-90, le=90),
-    lon: float = Query(DEFAULT_LON, ge=-180, le=180),
+    city: str = Query(cities.DEFAULT_CITY, pattern="^[a-z][a-z0-9-]{1,30}$",
+                      description="identifiant de ville (voir /api/cities) ; Paris par défaut"),
+    lat: float | None = Query(None, ge=-90, le=90),
+    lon: float | None = Query(None, ge=-180, le=180),
     radius: float = Query(2.0, gt=0, le=MAX_RADIUS_KM, description="km"),
-    when: str = Query("today", pattern="^(today|tomorrow|weekend|week)$"),
+    when: str = Query("today", pattern="^(now|today|tomorrow|weekend|week)$"),
     price: str | None = Query(None, pattern="^(free|paid|free_conditional)$"),
-    category: str | None = Query(None, max_length=20),
+    category: str | None = Query(None, max_length=30),
     culture: str | None = Query(None, max_length=200,
         description="cle(s) de culture separees par des virgules (voir /api/cultures) : "
                     "filtre sur les lieux mono-culturels"),
+    lang: str | None = Query(None, pattern="^[a-z]{2}$"),
     limit: int = Query(100, ge=1, le=300),
 ):
-    start, end = _window(when, datetime.now(timezone.utc))
+    c = _city_or_404(city)
+    if radius > c.max_radius_km:
+        raise HTTPException(422, f"radius > {c.max_radius_km} km pour {c.id}")
+    lat = c.center[0] if lat is None else lat
+    lon = c.center[1] if lon is None else lon
+    now = datetime.now(timezone.utc)
+    start, end = _window(when, now, c)
 
     cles, venues = _venues_pour_cultures(culture)
+    cats = None
+    if category:
+        cats = list(c.category_groups.get(category, [category]))
 
     with db.session() as con:
-        rows = db.search(con, lat=lat, lon=lon, radius_km=radius, start_from=start,
-                         start_to=end, price_type=price, category=category,
+        rows = db.search(con, city_id=c.id, lat=lat, lon=lon, radius_km=radius, start_from=start,
+                         start_to=end, price_type=price, category=cats,
                          venues=venues, limit=limit)
+        state = _data_state(con, c, now)
+    stale_before = now - timedelta(hours=c.stale_after_hours)
     for r in rows:
         r["distance_km"] = round(r["distance_km"], 2)
         # La culture enrichit la reponse ; elle n'est jamais la porte d'entree.
         # La question posee reste « ce soir, a 2 km, oui ou non ». Titre et
         # description passés pour l'option C : un évènement multi-pays perd
         # l'attribut même si son lieu reste admis (cf. cultures.yaml).
-        r["culture"] = cultures.for_venue(r.get("venue"), r.get("title"), r.get("description"))
+        if c.features.get("cultures"):
+            r["culture"] = cultures.for_venue(r.get("venue"), r.get("title"), r.get("description"))
+        r["is_free"] = r["price_type"] == "free"
+        r["stale"] = (r.get("last_seen") or "") < stale_before.isoformat(timespec="seconds")
+        _localize(r, lang, c)
 
-    _ajoute_culture_cle(rows, cles)
+    if c.features.get("cultures"):
+        _ajoute_culture_cle(rows, cles)
 
     return {
         "count": len(rows),
+        "city": c.id,
         "window": {"from": start.isoformat(timespec="minutes"), "to": end.isoformat(timespec="minutes")},
         "center": {"lat": lat, "lon": lon, "radius_km": radius},
+        "data": state,
         "events": rows,
     }
+
+
+@app.get("/api/events/{event_id}")
+def api_event(event_id: int, city: str = Query(cities.DEFAULT_CITY, pattern="^[a-z][a-z0-9-]{1,30}$"),
+              lang: str | None = Query(None, pattern="^[a-z]{2}$")):
+    """Un événement et sa provenance auditable (13.46). Un id d'une AUTRE ville
+    rend 404 : on ne devine pas une ville à partir d'un identifiant."""
+    c = _city_or_404(city)
+    with db.session() as con:
+        row = con.execute("SELECT * FROM events WHERE id = ? AND city_id = ?", (event_id, c.id)).fetchone()
+        if row is None:
+            raise HTTPException(404, "événement introuvable")
+        r = dict(row)
+        canon = None
+        if r["doublon_de"]:
+            canon = con.execute("SELECT id FROM events WHERE id = ?", (r["doublon_de"],)).fetchone()
+    r["last_seen"] = r.pop("ingested_at")
+    r["provenance"] = {
+        "source": r["source"], "source_id": r["source_id"], "url": r["url"],
+        "first_seen": r["first_seen"], "last_seen": r["last_seen"],
+        "last_changed": r["last_changed"], "source_updated_at": r["updated_at"],
+        "duplicate_of": canon["id"] if canon else None, "reason": r["dedup_reason"],
+    }
+    _localize(r, lang, c)
+    for k in ("content_hash", "doublon_de", "dedup_reason"):
+        r.pop(k, None)
+    return r
+
+
+@app.get("/api/cities")
+def api_cities():
+    """Villes ALLUMÉES uniquement. Une ville éteinte n'existe pas pour le public."""
+    return {"cities": [c.public() for c in cities.all_active()], "default": cities.DEFAULT_CITY}
 
 
 @app.get("/api/cultures")
@@ -342,19 +504,55 @@ def api_cultures():
 
 
 @app.get("/api/categories")
-def api_categories():
-    return {"categories": [c for c, _ in sources.CATEGORY_KEYWORDS] + ["other"]}
+def api_categories(city: str | None = Query(None, pattern="^[a-z][a-z0-9-]{1,30}$")):
+    if city is None:
+        return {"categories": [c for c, _ in sources.CATEGORY_KEYWORDS] + ["other"]}
+    # Avec une ville : seulement les catégories qui ont de VRAIS événements à venir
+    # (13.23 — aucune catégorie vide ni décorative).
+    c = _city_or_404(city)
+    with db.session() as con:
+        rows = con.execute(
+            "SELECT category, COUNT(*) AS n FROM events WHERE city_id = ? AND status = 'active' "
+            "AND doublon_de IS NULL AND lat IS NOT NULL AND start >= datetime('now', '-1 day') "
+            "GROUP BY category", (c.id,)).fetchall()
+    counts = {r["category"]: r["n"] for r in rows}
+    groups = [{"key": k, "categories": cs, "count": sum(counts.get(x, 0) for x in cs)}
+              for k, cs in c.category_groups.items()]
+    return {"categories": [k for k, n in counts.items() if n], "counts": counts,
+            "groups": [g for g in groups if g["count"]]}
 
 
 @app.get("/health")
 def health():
+    now = datetime.now(timezone.utc)
     with db.session() as con:
         s = db.stats(con)
         feeds = db.list_feeds(con, enabled_only=False)
         excluded = cultures.excluded_count(con)
+        by_city = db.stats_by_city(con)
+        reports = {c.id: db.source_report(con, c.id) for c in cities.load().values()}
+        states = {c.id: _data_state(con, c, now) for c in cities.all_active()}
     with db.session() as con:
         silent = db.silent_sources(con)
     degraded = any(not r["ok"] for r in _refresh_state["last_results"]) or bool(silent)
+
+    city_body = {}
+    for c in cities.load().values():
+        specs = registry.by_city(registry.load(), c.id)
+        city_body[c.id] = {
+            "enabled": c.enabled,
+            "events": by_city.get(c.id, {}),
+            "data": states.get(c.id),
+            "sources": reports.get(c.id, []),
+            # Sources déclarées mais NON lancées, et pourquoi — pour qu'on ne les croie pas muettes.
+            "not_running": [{"id": sp.id, "reason": sp.why_not()} for sp in specs if sp.why_not()],
+            "anomalies": [
+                {"source": r["source"], "reason": "vide" if r["empty_streak"] >= 2 else "erreurs"}
+                for r in reports.get(c.id, []) if r["empty_streak"] >= 2 or r["error_streak"] >= 3
+            ],
+        }
+        if c.enabled and states.get(c.id, {}).get("state") in ("stale",):
+            degraded = True
     body = {
         "status": "degraded" if degraded else "ok",
         "silent_sources": silent,
@@ -365,6 +563,7 @@ def health():
         # mordent trop — ou pas assez.
         "cultures": {"excluded_events": excluded},
         "dedup": _refresh_state["dedup"],
+        "cities": city_body,
         "refresh": _refresh_state,
     }
     return JSONResponse(body, status_code=200)
@@ -377,24 +576,28 @@ async def api_refresh():
     return {"sources": [{"name": r.name, "ok": r.ok, "events": len(r.events), "error": r.error} for r in results]}
 
 
-SITE = "https://eventmap.hamdy-tabsissi.com"
+# ------------------------------------------------------------------- pages
 
 # GET *et* HEAD : plusieurs vérificateurs de liens et déplieurs d'URL envoient un
 # HEAD avant le GET, et FastAPI répondait 405 (`allow: GET`) — une page joignable
 # qui se déclare inaccessible à toute machine qui demande poliment d'abord.
-@app.api_route("/", methods=["GET", "HEAD"])
+PAGE_METHODS = ["GET", "HEAD"]
+
+
+@app.api_route("/carte", methods=PAGE_METHODS)
+def carte_historique():
+    """URL d'avant le multi-ville : redirigée définitivement vers la carte de Paris."""
+    return RedirectResponse(f"/{cities.DEFAULT_CITY}/carte", status_code=301)
+
+
+@app.api_route("/", methods=PAGE_METHODS)
 def index():
-    return FileResponse(STATIC_DIR / "accueil.html")
-
-
-@app.api_route("/carte", methods=["GET", "HEAD"])
-def carte():
-    return FileResponse(STATIC_DIR / "index.html")
+    return render.root_page(SITE)
 
 
 @app.get("/sitemap.xml")
 def sitemap():
-    """Les deux seules URL du site.
+    """Pages publiques des villes ALLUMÉES (une ville éteinte n'y figure pas).
 
     Le sitemap ne peut pas être annoncé par un `robots.txt` : Cloudflare sert son
     propre fichier « content signals » à l'edge et l'origine n'est jamais consultée
@@ -402,13 +605,21 @@ def sitemap():
     Il faut donc le déclarer dans la Search Console, ou éditer le robots.txt géré
     depuis le tableau de bord Cloudflare.
     """
-    urls = "".join(f"<url><loc>{SITE}{p}</loc><changefreq>daily</changefreq></url>"
-                   for p in ("/", "/carte"))
-    return Response(
-        content=f'<?xml version="1.0" encoding="UTF-8"?>'
-                f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>',
-        media_type="application/xml",
-    )
+    return Response(content=render.sitemap_xml(SITE), media_type="application/xml")
 
 
+# `/static` est monté AVANT la route attrape-tout des pages de ville : sinon
+# `/{a}/{b}` avalerait `/static/...`.
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.api_route("/{a}", methods=PAGE_METHODS)
+@app.api_route("/{a}/{b}", methods=PAGE_METHODS)
+@app.api_route("/{a}/{b}/{c}", methods=PAGE_METHODS)
+@app.api_route("/{a}/{b}/{c}/{d}", methods=PAGE_METHODS)
+def city_pages(a: str, b: str | None = None, c: str | None = None, d: str | None = None):
+    """/paris, /paris/carte, /paris/e/12, /ar/jeddah, /ar/jeddah/carte, /ar/jeddah/e/12."""
+    page = render.city_page([p for p in (a, b, c, d) if p is not None], SITE)
+    if page is None:
+        raise HTTPException(404, "page introuvable")
+    return page
