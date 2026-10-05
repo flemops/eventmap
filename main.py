@@ -170,10 +170,19 @@ async def refresh() -> list[sources.SourceResult]:
             ]
             _refresh_state["dedup"] = dedup_counts
             return results
-        except Exception:
+        except Exception as exc:
             # Dernier filet : un bug dans refresh() lui-même ne doit pas tuer
             # la boucle. On logue la trace et on attend le prochain cycle.
             log.exception("refresh en échec")
+            # Et /health doit le dire : sans cela il restait « ok » sur le
+            # cycle précédent — vide après un redémarrage — alors que rien
+            # n'avait été écrit (incident du 05/10/2026). Le type seul, jamais
+            # le message (il peut contenir une adresse ou un chemin).
+            _refresh_state["last_results"] = [
+                {"source": "refresh", "ok": False, "events": 0,
+                 "duration_s": round(time.monotonic() - t0, 1),
+                 "error": f"cycle interrompu : {type(exc).__name__}"}
+            ]
             return []
         finally:
             _refresh_state["running"] = False

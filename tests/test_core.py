@@ -4,6 +4,8 @@ idempotence de l'upsert, recherche géo. `pytest -q` depuis la racine."""
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+import asyncio
+
 import pytest
 
 from fastapi import HTTPException
@@ -580,3 +582,49 @@ def test_parametres_invalides_sont_refuses_avant_la_base(params, client):
     """Ces bornes sont la seule validation d'entree du service : elles doivent
     rendre 422 sans jamais atteindre SQLite."""
     assert client.get("/api/events", params=params).status_code == 422
+
+
+def test_purge_detaches_duplicates_instead_of_breaking_the_refresh(con):
+    """Régression du 05/10/2026 : `foreign_keys = ON` + `doublon_de` pointant
+    vers une ligne purgée = « FOREIGN KEY constraint failed », et tout le cycle
+    de refresh était annulé (rien d'écrit, /health muet). La purge doit
+    détacher les doublons qui visent les lignes supprimées, pas planter."""
+    t = datetime(2026, 9, 20, 19, 0, tzinfo=timezone.utc)
+    db.upsert_events(con, [
+        db.Event(source="qfap", source_id="a", title="Nuit blanche", start=t, lat=48.86, lon=2.35),
+        db.Event(source="ics:x", source_id="b", title="Nuit blanche", start=t, lat=48.8605, lon=2.3505),
+    ])
+    sources.dedup_inter_source(con, now=t - timedelta(days=1))
+    loser = con.execute("SELECT id, doublon_de FROM events WHERE doublon_de IS NOT NULL").fetchone()
+    winner = con.execute("SELECT source FROM events WHERE id = ?", (loser["doublon_de"],)).fetchone()
+
+    # La source du « gagnant » est revue sans lui : il est périmé, on le purge.
+    assert db.purge_stale(con, winner["source"], datetime.now(timezone.utc) + timedelta(days=1)) == 1
+    restant = con.execute("SELECT doublon_de FROM events WHERE id = ?", (loser["id"],)).fetchone()
+    assert restant is not None and restant["doublon_de"] is None   # le doublon redevient visible
+
+    # Même chose pour la purge des événements passés.
+    db.upsert_events(con, [
+        db.Event(source="qfap", source_id="p", title="Fête passée", start=t, lat=48.86, lon=2.35),
+        db.Event(source="ics:x", source_id="q", title="Fête passée", start=t, lat=48.8605, lon=2.3505),
+    ])
+    sources.dedup_inter_source(con, now=t - timedelta(days=1))
+    assert db.purge_past(con) >= 2
+
+
+def test_health_degrade_si_le_cycle_de_refresh_plante(client, monkeypatch):
+    """Incident du 05/10/2026 : apres un redemarrage, un cycle qui plantait
+    laissait `last_results` vide et /health repondait « ok » alors que rien
+    n'avait ete ecrit. Un cycle interrompu doit rendre /health « degraded »,
+    sans exposer le message d'erreur brut."""
+    monkeypatch.setitem(main._refresh_state, "last_results", [])
+
+    async def panne(*a, **k):
+        raise RuntimeError("chemin /secret/interne")
+
+    monkeypatch.setattr(sources, "aggregate", panne)
+    assert asyncio.run(main.refresh()) == []
+    corps = client.get("/health").json()
+    assert corps["status"] == "degraded"
+    assert corps["refresh"]["last_results"][0]["source"] == "refresh"
+    assert "secret" not in str(corps)

@@ -194,19 +194,28 @@ def purge_stale(con: sqlite3.Connection, source: str, before: datetime) -> int:
     Appelé après un refresh *réussi* de cette source uniquement : si la source
     est tombée, on garde l'ancien contenu plutôt que de vider la base.
     """
-    cur = con.execute(
-        "DELETE FROM events WHERE source = ? AND ingested_at < ?",
-        (source, _iso(_to_utc(before))),
-    )
+    where, params = "source = ? AND ingested_at < ?", (source, _iso(_to_utc(before)))
+    _detacher_doublons(con, where, params)
+    cur = con.execute(f"DELETE FROM events WHERE {where}", params)
     return cur.rowcount
 
 
 def purge_past(con: sqlite3.Connection, older_than_days: int = 1) -> int:
-    cur = con.execute(
-        "DELETE FROM events WHERE start < datetime('now', ?)",
-        (f"-{older_than_days} days",),
-    )
+    where, params = "start < datetime('now', ?)", (f"-{older_than_days} days",)
+    _detacher_doublons(con, where, params)
+    cur = con.execute(f"DELETE FROM events WHERE {where}", params)
     return cur.rowcount
+
+
+def _detacher_doublons(con: sqlite3.Connection, where: str, params: tuple) -> None:
+    """Avant une purge : un doublon qui vise une ligne supprimee redevient
+    visible (doublon_de = NULL). Sans cela, `foreign_keys = ON` fait echouer
+    le DELETE et annule tout le cycle de refresh (incident du 05/10/2026).
+    `dedup_inter_source` remarque les doublons au cycle suivant."""
+    con.execute(
+        f"UPDATE events SET doublon_de = NULL WHERE doublon_de IN (SELECT id FROM events WHERE {where})",
+        params,
+    )
 
 
 def search(
