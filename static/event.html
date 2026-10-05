@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="%%LANG%%" dir="%%DIR%%">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="%%DESC%%">
+<title>%%TITLE%%</title>
+<link rel="canonical" href="%%CANON%%">
+%%ALTERNATES%%
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="EventMap">
+<meta property="og:locale" content="%%OGLOCALE%%">
+<meta property="og:url" content="%%CANON%%">
+<meta property="og:title" content="%%TITLE%%">
+<meta property="og:description" content="%%DESC%%">
+<meta name="twitter:card" content="summary">
+<script type="application/ld+json">%%JSONLD%%</script>
+<script type="application/json" id="em-city">%%CITYJSON%%</script>
+<link rel="stylesheet" href="/static/common.css?v=%%V%%">
+<link rel="stylesheet" href="/static/city.css?v=%%V%%">
+</head>
+<body class="gate" style="align-items: stretch; max-width: 640px; margin: 0 auto;">
+  <p><a class="brand" href="%%HOME_URL%%">EventMap</a> · <a href="%%MAP_URL%%#e%%EVENT_ID%%">%%CITY_NAME%%</a></p>
+  <article>
+    <h1 style="text-align: start;">%%H1%%</h1>
+    %%EVENT_BODY%%
+  </article>
+  <footer>%%FOOTER%%</footer>
+</body>
+</html>

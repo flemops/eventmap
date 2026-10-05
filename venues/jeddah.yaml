@@ -1,0 +1,65 @@
+# Référentiel des lieux de Jeddah — un lieu = UN objet, quelle que soit la façon
+# dont une source l'écrit (arabe, anglais, translittération, avec ou sans
+# l'article « ال »).
+#
+# Règles
+#   - Coordonnées : seulement celles d'une source vérifiable. Ici,
+#     OpenStreetMap (licence ODbL), interrogé le 06/10/2026 ; l'identifiant OSM
+#     est conservé dans `osm` pour que chacun puisse vérifier. Un lieu dont on
+#     ne connaît pas les coordonnées N'EST PAS inscrit (Hayy Jameel et le Red
+#     Sea Museum sont introuvables dans OSM par leur nom au 06/10/2026 : ils
+#     entreront avec les coordonnées de leur première source autorisée).
+#   - `aliases` : toute autre écriture rencontrée dans une source. La
+#     comparaison ignore casse, accents, voyelles brèves, ponctuation et variantes
+#     d'alef (voir textnorm.norm_key) : inutile de lister « Al-Balad » ET
+#     « al balad ».
+#   - Un alias ne doit désigner qu'UN lieu (vérifié par un test).
+#
+# Ce fichier ne contient AUCUN événement.
+
+city: jeddah
+venues:
+  - id: al-balad
+    name_en: "Al-Balad (Historic Jeddah)"
+    name_ar: "جدة التاريخية"
+    district: "Al-Balad"
+    lat: 21.4860371
+    lon: 39.1876960
+    osm: "relation/20039250"
+    aliases: ["Al-Balad", "Al Balad", "Historic Jeddah", "Jeddah Historic District", "البلد", "حي البلد", "جدة التاريخية"]
+
+  - id: king-fahd-fountain
+    name_en: "King Fahd's Fountain"
+    name_ar: "نافورة الملك فهد"
+    district: "Al Hamra"
+    lat: 21.5156595
+    lon: 39.1450461
+    osm: "node/3098654094"
+    aliases: ["King Fahd Fountain", "Jeddah Fountain", "نافورة جدة"]
+
+  - id: jeddah-yacht-club
+    name_en: "Jeddah Yacht Club"
+    name_ar: "نادي جدة لليخوت"
+    district: "Al-Shatee"
+    lat: 21.6529588
+    lon: 39.1015469
+    osm: "node/9370601228"
+    aliases: ["Jeddah Yacht Club & Marina", "نادي جدة لليخوت والمارينا"]
+
+  - id: roshn-waterfront
+    name_en: "ROSHN Waterfront"
+    name_ar: "واجهة روشن البحرية"
+    district: "Al-Shatee"
+    lat: 21.5989237
+    lon: 39.1063798
+    osm: "way/627246744"
+    aliases: ["Roshn Waterfront Jeddah", "Jeddah Waterfront", "واجهة جدة البحرية"]
+
+  - id: jeddah-super-dome
+    name_en: "Jeddah Super Dome"
+    name_ar: "جدة سوبر دوم"
+    district: "King Abdulaziz International Airport area"
+    lat: 21.7492364
+    lon: 39.1517291
+    osm: "relation/14279323"
+    aliases: ["Jeddah Superdome", "Super Dome Jeddah", "سوبر دوم جدة"]

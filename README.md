@@ -1,4 +1,9 @@
-# EventMap — Paris ce soir
+# EventMap — Paris ce soir (moteur multi-ville)
+
+> Depuis le 06/10/2026 le moteur sert plusieurs villes (`cities.yaml`). Paris est la ville de
+> référence ; Jeddah est construite mais **éteinte** tant qu'aucune source n'est autorisée.
+> Architecture, exploitation, interrupteurs, retour arrière, ajout d'une ville :
+> [`docs/multi-ville.md`](docs/multi-ville.md) · sources de Jeddah : [`docs/jeddah-sources.md`](docs/jeddah-sources.md).
 
 <!-- déploiement continu (pull-based) actif depuis le 09/09/2026, rollback vérifié, script durci -->
 
@@ -30,7 +35,7 @@ L'API répond sur http://127.0.0.1:8000, le premier refresh démarre 5 s après
 (≈ 35 s). `/health` indique l'état.
 
 ```bash
-pytest -q                                   # 18 tests, sans réseau
+pytest -q                                   # 143 tests, sans réseau
 curl -X POST localhost:8000/api/refresh      # forcer un refresh
 ```
 

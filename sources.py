@@ -24,11 +24,13 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from html import unescape
 from typing import Awaitable, Callable
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
+import safety
 from db import Event
+from textnorm import norm_key
 
 log = logging.getLogger("eventmap.sources")
 
@@ -94,16 +96,26 @@ class PoliteClient:
     Un seul client pour tout le refresh : connexions réutilisées, et surtout
     un verrou par domaine qui garantit ≤ 1 requête/s quelle que soit la
     concurrence en amont. C'est la protection de l'IP de la VM.
+
+    Anti-SSRF (13.49) : l'URL de départ ET chaque redirection doivent se
+    résoudre vers une adresse publique. Les redirections sont suivies à la main
+    (5 sauts maximum) — `follow_redirects=True` d'httpx suivrait un 302 vers
+    http://169.254.169.254/ sans que rien ne puisse l'en empêcher.
     """
 
-    def __init__(self, min_interval: float = 1.0, timeout: float = 20.0):
+    MAX_REDIRECTS = 5
+
+    def __init__(self, min_interval: float = 1.0, timeout: float = 20.0,
+                 intervals: dict[str, float] | None = None, public_only: bool = True):
         self.min_interval = min_interval
+        self.intervals = intervals or {}          # hôte -> délai propre à la source
+        self.public_only = public_only
         self._last: dict[str, float] = defaultdict(float)
         self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._client = httpx.AsyncClient(
             headers={"User-Agent": USER_AGENT, "Accept-Encoding": "gzip"},
             timeout=timeout,
-            follow_redirects=True,
+            follow_redirects=False,
         )
 
     async def __aenter__(self) -> "PoliteClient":
@@ -113,15 +125,25 @@ class PoliteClient:
         await self._client.aclose()
 
     async def get(self, url: str, **kw) -> httpx.Response:
-        host = urlsplit(url).netloc
-        async with self._locks[host]:
-            wait = self.min_interval - (time.monotonic() - self._last[host])
-            if wait > 0:
-                await asyncio.sleep(wait)
-            try:
-                return await self._client.get(url, **kw)
-            finally:
-                self._last[host] = time.monotonic()
+        for _ in range(self.MAX_REDIRECTS + 1):
+            if self.public_only:
+                await safety.ensure_public_url_async(url)
+            host = urlsplit(url).netloc
+            interval = self.intervals.get(host, self.min_interval)
+            async with self._locks[host]:
+                wait = interval - (time.monotonic() - self._last[host])
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                try:
+                    resp = await self._client.get(url, **kw)
+                finally:
+                    self._last[host] = time.monotonic()
+            loc = resp.headers.get("location")
+            if resp.status_code in (301, 302, 303, 307, 308) and loc:
+                url = urljoin(url, loc)
+                continue
+            return resp
+        raise safety.UnsafeUrl("trop de redirections")
 
 
 # ------------------------------------------------------------- iCalendar
@@ -136,7 +158,18 @@ def parse_ics(raw: bytes | str, *, source: str, default_url: str | None = None,
     cal = Calendar.from_ical(raw)
     events: list[Event] = []
 
+    # Occurrences modifiées ou annulées d'une série (RECURRENCE-ID) : une série
+    # n'est PAS « tous les jours de la plage ». On les indexe d'abord pour que
+    # l'occurrence générée par la RRULE soit remplacée, pas doublée.
+    overrides: dict[tuple[str, datetime], object] = {}
     for comp in cal.walk("VEVENT"):
+        rid = comp.get("RECURRENCE-ID")
+        if rid is not None:
+            overrides[(str(comp.get("UID") or ""), _ical_to_dt(rid.dt))] = comp
+
+    for comp in cal.walk("VEVENT"):
+        if comp.get("RECURRENCE-ID") is not None:
+            continue          # traitée avec sa série
         summary = str(comp.get("SUMMARY", "")).strip()
         dtstart = comp.get("DTSTART")
         if not summary or dtstart is None:
@@ -155,7 +188,8 @@ def parse_ics(raw: bytes | str, *, source: str, default_url: str | None = None,
         # que `start` diffère déjà, mais l'identifiant perdrait tout son sens
         # en dehors du stockage (logs, rapprochement manuel). Sans « // »
         # dans l'UID, le split est un no-op.
-        uid = str(comp.get("UID") or stable_id(summary, start.isoformat())).split("//", 1)[0]
+        raw_uid = str(comp.get("UID") or "")
+        uid = (raw_uid or stable_id(summary, start.isoformat())).split("//", 1)[0]
         url = str(comp.get("URL") or default_url or "")
         location = str(comp.get("LOCATION", "")).strip() or None
         if location and " - " in location:
@@ -186,6 +220,8 @@ def parse_ics(raw: bytes | str, *, source: str, default_url: str | None = None,
                 pass
         categories = comp.get("CATEGORIES")
         cat_label = " ".join(str(c) for c in (categories.cats if categories else []))
+        status = _ical_status(comp)
+        excluded = _ical_exdates(comp)
 
         occurrences: list[datetime] = [start]
         rrule = comp.get("RRULE")
@@ -196,14 +232,45 @@ def parse_ics(raw: bytes | str, *, source: str, default_url: str | None = None,
         for occ in occurrences:
             if not (start_min <= occ <= start_max):
                 continue
+            if occ in excluded:
+                continue          # EXDATE : « pas ce jour-là » est une information de la source
+            o_start, o_end, o_status, o_title = occ, (occ + duration) if duration else None, status, summary
+            ov = overrides.get((raw_uid, occ))
+            if ov is not None:
+                ov_start = ov.get("DTSTART")
+                if ov_start is not None:
+                    o_start = _ical_to_dt(ov_start.dt)
+                    ov_end = ov.get("DTEND")
+                    o_end = _ical_to_dt(ov_end.dt) if ov_end is not None else (o_start + duration if duration else None)
+                o_status = _ical_status(ov) if ov.get("STATUS") else o_status
+                o_title = str(ov.get("SUMMARY") or summary).strip()
             events.append(Event(
-                source=source, source_id=uid, start=occ,
-                end=(occ + duration) if duration else None,
-                title=summary, description=description, venue=location,
+                source=source, source_id=uid, start=o_start,
+                end=o_end,
+                title=o_title, description=description, venue=location,
                 lat=lat, lon=lon, url=url or None, updated_at=updated,
                 category=normalize_category(cat_label, summary),
+                status=o_status,
             ))
     return events
+
+
+def _ical_status(comp) -> str:
+    """STATUS:CANCELLED d'un VEVENT → « cancelled ». TENTATIVE/CONFIRMED restent actifs."""
+    st = str(comp.get("STATUS", "")).strip().upper()
+    return "cancelled" if st == "CANCELLED" else "active"
+
+
+def _ical_exdates(comp) -> set[datetime]:
+    """Toutes les dates exclues d'une série, quel que soit le nombre de lignes EXDATE."""
+    raw = comp.get("EXDATE")
+    if raw is None:
+        return set()
+    out: set[datetime] = set()
+    for line in (raw if isinstance(raw, list) else [raw]):
+        for d in getattr(line, "dts", []):
+            out.add(_ical_to_dt(d.dt))
+    return out
 
 
 def _ical_to_dt(value: date | datetime) -> datetime:
@@ -287,6 +354,12 @@ async def fetch_openagenda(client: PoliteClient, agenda_uid: str, *, key: str | 
 
 # ------------------------------------------------------------- agrégation
 
+def _is_client_error(exc: Exception) -> bool:
+    resp = getattr(exc, "response", None)
+    code = getattr(resp, "status_code", None)
+    return isinstance(code, int) and 400 <= code < 500 and code != 429
+
+
 Fetcher = Callable[[PoliteClient], Awaitable[list[Event]]]
 
 
@@ -303,7 +376,9 @@ class SourceResult:
 
 
 async def aggregate(fetchers: dict[str, Fetcher], *, concurrency: int = 4,
-                    per_source_timeout: float = 120.0) -> list[SourceResult]:
+                    per_source_timeout: float = 120.0,
+                    policies: dict[str, dict] | None = None,
+                    intervals: dict[str, float] | None = None) -> list[SourceResult]:
     """Lance tous les connecteurs et renvoie un résultat **par source**.
 
     Une source qui lève ou dépasse son délai produit un SourceResult en
@@ -311,19 +386,33 @@ async def aggregate(fetchers: dict[str, Fetcher], *, concurrency: int = 4,
     garantit qu'une panne isolée ne remonte jamais jusqu'à l'API.
     """
     sem = asyncio.Semaphore(concurrency)
+    policies = policies or {}
 
     async def run(name: str, fetcher: Fetcher, client: PoliteClient) -> SourceResult:
         t0 = time.monotonic()
+        pol = policies.get(name, {})
+        timeout = pol.get("timeout_s", per_source_timeout)
+        attempts = 1 + int(pol.get("retries", 0))
         async with sem:
-            try:
-                events = await asyncio.wait_for(fetcher(client), per_source_timeout)
-                return SourceResult(name, events, duration_s=time.monotonic() - t0)
-            except Exception as exc:  # noqa: BLE001 — on veut tout capturer ici
-                log.warning("source %s en erreur: %s: %s", name, type(exc).__name__, exc)
-                return SourceResult(name, [], error=f"{type(exc).__name__}: {exc}"[:500],
-                                    duration_s=time.monotonic() - t0)
+            err = ""
+            for attempt in range(attempts):
+                try:
+                    # Un délai PAR SOURCE : une source lente ne bloque pas les autres
+                    # (le sémaphore est tenu, mais wait_for borne chaque tentative).
+                    events = await asyncio.wait_for(fetcher(client), timeout)
+                    return SourceResult(name, events, duration_s=time.monotonic() - t0)
+                except Exception as exc:  # noqa: BLE001 — on veut tout capturer ici
+                    err = f"{type(exc).__name__}: {exc}"[:500]
+                    log.warning("source %s en erreur (tentative %d/%d): %s", name, attempt + 1, attempts, err)
+                    # Pas de nouvelle tentative sur une erreur qui ne passera pas
+                    # (URL refusée, 4xx) ; backoff exponentiel plafonné sinon.
+                    if isinstance(exc, safety.UnsafeUrl) or _is_client_error(exc):
+                        break
+                    if attempt + 1 < attempts:
+                        await asyncio.sleep(min(30.0, 2.0 ** (attempt + 1)))
+            return SourceResult(name, [], error=err, duration_s=time.monotonic() - t0)
 
-    async with PoliteClient() as client:
+    async with PoliteClient(intervals=intervals) as client:
         results = await asyncio.gather(
             *(run(n, f, client) for n, f in fetchers.items()),
             return_exceptions=True,
@@ -351,25 +440,39 @@ async def aggregate(fetchers: dict[str, Fetcher], *, concurrency: int = 4,
 # les filtre à la lecture. Réversible par construction : corriger un faux
 # positif est un simple UPDATE, pas une réingestion.
 
-_NORM_RE = re.compile(r"[^a-z0-9]+")
-
-
 def _norm_title(t: str) -> str:
-    import unicodedata
-    t = unicodedata.normalize("NFKD", t.lower()).encode("ascii", "ignore").decode()
-    return _NORM_RE.sub(" ", t).strip()
+    # textnorm.norm_key garde les lettres arabes. L'ancienne version passait par
+    # ASCII et vidait tout titre arabe : deux titres arabes DIFFERENTS devenaient
+    # deux chaines vides, donc "identiques" (similarite 1.0) - chaque evenement
+    # arabe d'un meme creneau aurait ete marque doublon de l'autre.
+    return norm_key(t)
 
 
 def _norm_venue(v: str) -> str:
-    import unicodedata
-    v = unicodedata.normalize("NFKD", v)
-    v = "".join(c for c in v if not unicodedata.combining(c))
-    return " ".join(v.lower().split())
+    return norm_key(v)
 
 
 def _title_similarity(a: str, b: str) -> float:
     from difflib import SequenceMatcher
-    return SequenceMatcher(None, _norm_title(a), _norm_title(b)).ratio()
+    na, nb = _norm_title(a), _norm_title(b)
+    if not na or not nb:
+        return 0.0                 # un titre vide ne ressemble a rien, pas meme a un autre vide
+    return SequenceMatcher(None, na, nb).ratio()
+
+
+# Priorite de chaque source (registry.SourceSpec.priority), posee par main au
+# demarrage : un enregistrement plus ancien d'une source moins fiable ne peut pas
+# l'emporter sur l'information plus recente d'une source officielle (13.6).
+_PRIORITY: dict[str, int] = {}
+
+
+def set_priorities(mapping: dict[str, int]) -> None:
+    _PRIORITY.clear()
+    _PRIORITY.update(mapping)
+
+
+def _priority(source: str) -> int:
+    return _PRIORITY.get(source, 0)
 
 
 # Priorité par champ en cas de fusion (passe forte uniquement) — la source
@@ -420,40 +523,62 @@ def _merge_fields(con, cluster: list[dict]) -> int:
     return anchor["id"]
 
 
+def _lang_script(title: str) -> str:
+    from textnorm import has_arabic
+    return "ar" if has_arabic(title) else "latin"
+
+
+def _same_place(x: dict, y: dict, max_m: float = 150.0) -> bool:
+    if x.get("venue_id") and x.get("venue_id") == y.get("venue_id"):
+        return True
+    from db import _haversine_km
+    if None in (x["lat"], y["lat"]):
+        return False
+    d = _haversine_km(x["lat"], x["lon"], y["lat"], y["lon"])
+    return d is not None and d * 1000 <= max_m
+
+
 def dedup_inter_source(con, *, now: datetime | None = None) -> dict[str, int]:
-    """Rapproche les enregistrements de sources différentes qui décrivent le
-    même événement. Trois passes (paquet de déploiement du 03/09) :
+    """Rapproche les enregistrements de sources differentes qui decrivent le
+    meme evenement, VILLE PAR VILLE. Quatre passes :
 
-      1. exacte — même (source, source_id) : déjà garanti par la contrainte
-         UNIQUE de la table, rien à faire ici.
-      2. forte  — titres similaires à ≥ 0.85, même créneau à ± 30 min, et
-         < 150 m (ou géoloc manquante d'un côté, auquel cas on ne peut pas
-         infirmer le rapprochement). Fusion de champs par priorité en plus
-         du lien : c'est la seule passe qui « fusionne », au sens du paquet.
-      3. faible — titres similaires à ≥ 0.92, même jour, même lieu normalisé.
-         Lien seulement, aucune fusion de champs — « à marquer plutôt qu'à
-         fusionner » : la confiance est plus faible, on ne réécrit rien.
+      1. exacte - meme (source, source_id) : deja garanti par la contrainte
+         UNIQUE de la table, rien a faire ici.
+      2. forte  - titres similaires a >= 0.85, meme creneau a +/- 30 min, et
+         < 150 m (ou geoloc manquante d'un cote, auquel cas on ne peut pas
+         infirmer le rapprochement). Fusion de champs par priorite en plus
+         du lien : c'est la seule passe qui "fusionne", au sens du paquet.
+      3. faible - titres similaires a >= 0.92, meme jour, meme lieu normalise.
+         Lien seulement, aucune fusion de champs - "a marquer plutot qu'a
+         fusionner" : la confiance est plus faible, on ne reecrit rien.
+      4. traduction - meme creneau (+/- 30 min), meme lieu (referentiel ou
+         < 150 m), meme categorie, mais titres d'ECRITURES differentes (arabe /
+         latin) : c'est le meme evenement vu en deux langues (13.42). Le titre
+         de l'autre langue est range dans `i18n` du survivant.
 
-    Ne supprime jamais. Réinitialise `doublon_de` sur les événements à venir
-    avant de le recalculer entièrement à chaque cycle, pour qu'un changement
-    de priorité ou une source qui disparaît ne laisse pas de lien orphelin.
+    Ne supprime jamais. Reinitialise `doublon_de` sur les evenements a venir
+    avant de le recalculer entierement a chaque cycle, pour qu'un changement
+    de priorite ou une source qui disparait ne laisse pas de lien orphelin.
     """
+    import json
+    from cities import get as _city
     from db import _haversine_km, _iso
 
     now = now or datetime.now(timezone.utc)
     horizon = _iso(now - timedelta(days=1))
     rows = [dict(r) for r in con.execute(
-        "SELECT id, source, source_id, title, start, lat, lon, venue, "
-        "description, price_type, url FROM events WHERE start >= ?",
+        "SELECT id, source, source_id, title, start, lat, lon, venue, venue_id, "
+        "description, price_type, url, city_id, category, lang, i18n, status "
+        "FROM events WHERE start >= ?",
         (horizon,),
     )]
-    con.execute("UPDATE events SET doublon_de = NULL WHERE start >= ?", (horizon,))
+    con.execute("UPDATE events SET doublon_de = NULL, dedup_reason = NULL WHERE start >= ?", (horizon,))
 
-    by_day: dict[str, list[dict]] = defaultdict(list)
+    by_day: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for r in rows:
-        by_day[r["start"][:10]].append(r)
+        by_day[(r["city_id"], r["start"][:10])].append(r)
 
-    counts = {"forte": 0, "faible": 0}
+    counts = {"forte": 0, "faible": 0, "traduction": 0}
     for day_rows in by_day.values():
         clusters: list[list[dict]] = []
         kinds: list[str] = []
@@ -462,7 +587,7 @@ def dedup_inter_source(con, *, now: datetime | None = None) -> dict[str, int]:
             for idx, cluster in enumerate(clusters):
                 anchor = cluster[0]
                 if anchor["source"] == r["source"]:
-                    continue                       # même source : géré par UNIQUE
+                    continue                       # meme source : gere par UNIQUE
                 sim = _title_similarity(anchor["title"], r["title"])
                 if sim < 0.85:
                     continue
@@ -487,15 +612,59 @@ def dedup_inter_source(con, *, now: datetime | None = None) -> dict[str, int]:
                 break
             if not placed:
                 clusters.append([r])
-                kinds.append("faible")   # cluster à un seul élément : sans effet
+                kinds.append("faible")   # cluster a un seul element : sans effet
+
+        # --- passe 4 : traductions entre clusters restes seuls ----------------
+        singles = [c[0] for c in clusters if len(c) == 1]
+        linked: set[int] = set()
+        for i, x in enumerate(singles):
+            if x["id"] in linked:
+                continue
+            for y in singles[i + 1:]:
+                if y["id"] in linked or x["source"] == y["source"]:
+                    continue
+                if _lang_script(x["title"]) == _lang_script(y["title"]):
+                    continue
+                if x["category"] != y["category"]:
+                    continue
+                dt = abs((datetime.fromisoformat(x["start"]) - datetime.fromisoformat(y["start"])).total_seconds())
+                if dt > 1800 or not _same_place(x, y):
+                    continue
+                c = _city(x["city_id"])
+                default = c.default_language if c else "en"
+                keep, other = (x, y) if (_lang_script(x["title"]) == "ar") == (default == "ar") else (y, x)
+                lg = "ar" if _lang_script(other["title"]) == "ar" else "en"
+                i18n = json.loads(keep["i18n"]) if keep.get("i18n") else {}
+                i18n.setdefault(lg, {"title": other["title"], "description": other["description"]})
+                con.execute("UPDATE events SET i18n = ? WHERE id = ?",
+                            (json.dumps(i18n, ensure_ascii=False), keep["id"]))
+                con.execute("UPDATE events SET doublon_de = ?, dedup_reason = 'traduction' WHERE id = ?",
+                            (keep["id"], other["id"]))
+                counts["traduction"] += 1
+                linked.update((x["id"], y["id"]))
+                break
 
         for cluster, kind in zip(clusters, kinds):
             if len(cluster) < 2:
                 continue
             counts[kind] += len(cluster) - 1
-            winner_id = _merge_fields(con, cluster) if kind == "forte" else min(r["id"] for r in cluster)
+            # Le survivant : la source de plus haute priorite, puis le plus ancien enregistrement.
+            top = max(cluster, key=lambda r: (_priority(r["source"]), -r["id"]))
+            if kind == "forte":
+                merged_id = _merge_fields(con, cluster)
+                merged = next(r for r in cluster if r["id"] == merged_id)
+                winner_id = top["id"] if _priority(top["source"]) > _priority(merged["source"]) else merged_id
+            else:
+                winner_id = top["id"]
+            # Un "annule" d'une source au moins aussi prioritaire que le survivant gagne.
+            w = next(r for r in cluster if r["id"] == winner_id)
+            neg = [r for r in cluster if r["status"] in ("cancelled", "postponed")
+                   and _priority(r["source"]) >= _priority(w["source"])]
+            if neg:
+                con.execute("UPDATE events SET status = ? WHERE id = ?", (neg[0]["status"], winner_id))
             for r in cluster:
                 if r["id"] != winner_id:
-                    con.execute("UPDATE events SET doublon_de = ? WHERE id = ?", (winner_id, r["id"]))
+                    con.execute("UPDATE events SET doublon_de = ?, dedup_reason = ? WHERE id = ?",
+                                (winner_id, kind, r["id"]))
 
     return counts
