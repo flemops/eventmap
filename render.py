@@ -49,8 +49,10 @@ def _esc(v) -> str:
 
 def _json_block(obj) -> str:
     """JSON sûr à poser dans un <script> : `</script>` et `<!--` neutralisés."""
+    # <, > et & en \uXXXX : le JSON reste identique pour qui le parse, et aucune
+    # séquence (</script>, <!--, <script>) ne peut plus exister dans le bloc.
     return (json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
-            .replace("</", "<\\/").replace("<!--", "<\\!--"))
+            .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026"))
 
 
 @lru_cache(maxsize=1)

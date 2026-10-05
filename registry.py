@@ -60,10 +60,12 @@ class SourceSpec:
                     and cities.source_enabled(self.id))
 
     def why_not(self) -> str | None:
+        # L'autorisation d'abord : c'est la raison qui compte (et qui ne se « corrige » pas
+        # en passant `enabled` à true).
+        if self.authorization != "ok":
+            return f"autorisation « {self.authorization} » — voir docs/jeddah-sources.md"
         if not self.enabled:
             return "désactivée dans feeds.yaml"
-        if self.authorization != "ok":
-            return f"autorisation « {self.authorization} »"
         if cities.active(self.city_id) is None:
             return f"ville {self.city_id} éteinte"
         if not cities.source_enabled(self.id):

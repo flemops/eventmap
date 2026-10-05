@@ -204,6 +204,10 @@ def _migrate(con: sqlite3.Connection) -> None:
     # n'existe qu'une fois les ALTER passés.
     con.execute("CREATE INDEX IF NOT EXISTS idx_events_city_start ON events (city_id, start)")
     con.execute("CREATE INDEX IF NOT EXISTS idx_events_city_status ON events (city_id, status)")
+    # Sans ce commit, un `connect().close()` (c'est ce que fait le démarrage de
+    # l'application) ANNULE le rattrapage `first_seen` ci-dessus — et comme la
+    # colonne existe désormais, il ne serait jamais rejoué.
+    con.commit()
 
 
 @contextmanager
