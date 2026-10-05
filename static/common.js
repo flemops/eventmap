@@ -5,8 +5,8 @@ window.EM_COMMON = (() => {
   let CFG = {};
   try { CFG = JSON.parse(document.getElementById("em-city")?.textContent || "{}"); } catch { /* page sans ville */ }
   const CITY = CFG.city || {
-    id: "paris", timezone: "Europe/Paris", currency: "EUR", default_zoom: 13, weekend_days: [5, 6],
-    center: { lat: 48.8584, lon: 2.3470 }, radius_options_km: [1, 2, 4, 8], max_radius_km: 8,
+    id: "paris", timezone: "Europe/Paris", currency: "EUR", zoom: 13, weekend_days: [5, 6],
+    center: { lat: 48.8584, lon: 2.3470 }, radius_options_km: [1, 2, 4, 8], default_radius_km: 2, max_radius_km: 8,
     default_price: "free", features: { cultures: true }, names: { fr: "Paris" }, category_groups: {},
   };
   const I = window.EM_I18N || { lang: "fr", locale: "fr-FR", t: (k) => k, catLabel: (k) => k, grpLabel: (k) => k };

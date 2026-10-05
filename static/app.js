@@ -13,7 +13,7 @@
   const state = {
     lat: CITY.center.lat, lon: CITY.center.lon,
     when: ["today", "tomorrow", "weekend", "week"].includes(params.get("when")) ? params.get("when") : "today",
-    radius: CITY.radius_options_km.includes(+params.get("r")) ? +params.get("r") : CITY.radius_options_km[Math.min(1, CITY.radius_options_km.length - 1)],
+    radius: CITY.radius_options_km.includes(+params.get("r")) ? +params.get("r") : (CITY.default_radius_km || CITY.radius_options_km[0]),
     free: params.has("price") ? params.get("price") === "free" : CITY.default_price === "free",
     category: params.get("cat") || "", located: false,
   };
@@ -33,7 +33,7 @@
   $("#grab").setAttribute("aria-label", t("sheet_expand"));
 
   /* ---- carte --------------------------------------------------------------- */
-  const map = L.map("map", { zoomControl: false }).setView([state.lat, state.lon], CITY.default_zoom);
+  const map = L.map("map", { zoomControl: false }).setView([state.lat, state.lon], CITY.zoom);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
   L.control.zoom({ position: LANG === "ar" ? "bottomleft" : "bottomright" }).addTo(map);
   const cluster = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 45, spiderfyOnMaxZoom: true, chunkedLoading: true });
@@ -113,7 +113,7 @@
     $("#count").textContent = evs.length ? `· ${t("n_events", { n: evs.length })}` : "";
     dataNotice(data.data, evs.length);
     if (!evs.length) {
-      const degraded = data.data && data.data.state && data.data.state !== "ok";
+      const degraded = data.data && data.data.state && !["ok", "unknown"].includes(data.data.state);
       list.innerHTML = degraded ? "" :
         `<div class="empty"><b>${esc(t("none_title"))}</b>${esc(t("none_hint"))}</div>`;
       status.textContent = degraded ? t("none_city") : "";
@@ -242,7 +242,7 @@
     const q = new URLSearchParams();
     if (state.when !== "today") q.set("when", state.when);
     if (state.free !== (CITY.default_price === "free")) q.set("price", state.free ? "free" : "all");
-    if (state.radius !== CITY.radius_options_km[1]) q.set("r", state.radius);
+    if (state.radius !== (CITY.default_radius_km || CITY.radius_options_km[0])) q.set("r", state.radius);
     if (state.category) q.set("cat", state.category);
     const s = q.toString();
     history.replaceState(null, "", location.pathname + (s ? "?" + s : "") + location.hash);
@@ -303,7 +303,7 @@
           state.located = false; state.lat = CITY.center.lat; state.lon = CITY.center.lon;
           suggestCity(here); load(); return;
         }
-        state.lat = here.lat; state.lon = here.lon; map.setView([state.lat, state.lon], Math.max(CITY.default_zoom, 13)); load();
+        state.lat = here.lat; state.lon = here.lon; map.setView([state.lat, state.lon], Math.max(CITY.zoom, 13)); load();
       },
       (err) => { geoNote = err && err.code === 1 ? t("geo_denied") : t("geo_unavailable"); status.textContent = ""; say(geoNote, "info"); },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 },

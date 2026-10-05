@@ -40,6 +40,7 @@ class City:
     center: tuple          # (lat, lon)
     zoom: int
     radius_options_km: tuple
+    default_radius_km: float
     max_radius_km: float
     weekend_days: tuple
     night_cutoff_hour: int
@@ -75,6 +76,7 @@ class City:
             "center": {"lat": self.center[0], "lon": self.center[1]},
             "zoom": self.zoom,
             "radius_options_km": list(self.radius_options_km),
+            "default_radius_km": self.default_radius_km,
             "max_radius_km": self.max_radius_km,
             "weekend_days": list(self.weekend_days),
             "home": self.home,
@@ -118,6 +120,7 @@ def _parse(raw: dict) -> dict[str, City]:
             default_language=default_lang, center=(float(mc["lat"]), float(mc["lon"])),
             zoom=int(c.get("default_zoom", 12)),
             radius_options_km=tuple(c.get("radius_options_km") or (2, 5, 10)),
+            default_radius_km=float(c.get("default_radius_km", 2)),
             max_radius_km=float(c.get("max_radius_km", 10)),
             weekend_days=wd, night_cutoff_hour=cut,
             home=c.get("home", "carte"), default_price=c.get("default_price") or "",

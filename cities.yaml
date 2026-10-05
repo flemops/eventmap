@@ -34,6 +34,7 @@ cities:
     map_center: {lat: 48.8584, lon: 2.3470}
     default_zoom: 13
     radius_options_km: [1, 2, 4, 8]
+    default_radius_km: 2
     max_radius_km: 8
     weekend_days: [5, 6]
     night_cutoff_hour: 0
@@ -58,6 +59,7 @@ cities:
     map_center: {lat: 21.5433, lon: 39.1728}
     default_zoom: 11
     radius_options_km: [2, 5, 10, 30]
+    default_radius_km: 30        # une ville étendue : on montre tout, l'utilisateur resserre ensuite
     max_radius_km: 30
     weekend_days: [4, 5]
     night_cutoff_hour: 5

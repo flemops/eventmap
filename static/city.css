@@ -35,7 +35,9 @@ select.chip { appearance: none; padding-inline-end: 13px; }
 .notice button { margin-inline-start: 8px; }
 
 /* ---- carte + liste ------------------------------------------------------- */
-main { flex: 1; position: relative; min-height: 0; display: flex; flex-direction: column; }
+/* Plancher : sur un écran très bas (téléphone en paysage), une carte de hauteur nulle fait
+   échouer Leaflet (« infinite number of tiles »). */
+main { flex: 1; position: relative; min-height: 260px; display: flex; flex-direction: column; }
 #map { position: absolute; inset: 0; background: var(--panel); direction: ltr; }
 .leaflet-popup-content-wrapper { background: var(--panel); color: var(--text); border-radius: 10px; }
 .leaflet-popup-tip { background: var(--panel); }
@@ -111,8 +113,12 @@ button.ev:hover, button.ev.active, a.ev:hover { border-inline-start-color: var(-
 footer { font-size: 11px; color: var(--muted); padding: 6px 12px calc(6px + var(--safe-b)); border-top: 1px solid var(--line); background: var(--panel); flex: none; }
 
 /* ---- choix de ville ------------------------------------------------------- */
+html:has(body.gate), body.gate { height: auto; }
 body.gate { background: var(--bg); color: var(--text); font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Arabic", Roboto, sans-serif;
-            min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 16px; gap: 20px; }
+            min-height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; padding: 24px 16px; gap: 20px; }
+/* Centré SANS jamais rendre le haut inaccessible quand le contenu dépasse l'écran. */
+body.gate > :first-child { margin-top: auto; }
+body.gate > :last-child { margin-bottom: auto; }
 body.gate h1 { margin: 0; font-size: 28px; text-align: center; letter-spacing: -.01em; }
 .cities { display: grid; gap: 12px; width: min(560px, 100%); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .city-card { display: grid; gap: 4px; padding: 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line);
