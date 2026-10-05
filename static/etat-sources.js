@@ -30,13 +30,17 @@
     const enPanne = ((sante.refresh && sante.refresh.last_results) || []).filter((s) => s && s.ok === false);
     if (!enPanne.length) return;
 
-    const noms = [...new Set(enPanne.map((s) => nomDe(String(s.source || ""))))];
+    // « refresh » : c'est le cycle de mise a jour lui-meme qui s'est
+    // interrompu, pas une source (main.py, refresh()).
+    const cycle = enPanne.some((s) => s.source === "refresh");
+    const noms = [...new Set(enPanne.filter((s) => s.source !== "refresh").map((s) => nomDe(String(s.source || ""))))];
     const p = document.createElement("p");
     p.className = "etat-sources";
     p.setAttribute("role", "status");
-    p.textContent =
-      (noms.length > 1 ? `Les sources ${noms.join(" et ")} ne répondent plus` : `La source ${noms[0]} ne répond plus`) +
-      " pour l'instant : les événements déjà collectés restent affichés, les nouveaux arriveront à son retour. Le site, lui, fonctionne normalement.";
+    p.textContent = cycle || !noms.length
+      ? "La mise à jour automatique des événements a échoué au dernier passage : les événements déjà collectés restent affichés. Le site, lui, fonctionne normalement."
+      : (noms.length > 1 ? `Les sources ${noms.join(" et ")} ne répondent plus` : `La source ${noms[0]} ne répond plus`) +
+        " pour l'instant : les événements déjà collectés restent affichés, les nouveaux arriveront à son retour. Le site, lui, fonctionne normalement.";
     // Styles en ligne (autorisés par la CSP) : common.css est servi sans
     // version, une ancienne copie en cache ne doit pas laisser le bandeau nu.
     Object.assign(p.style, {
