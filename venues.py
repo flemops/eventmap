@@ -84,5 +84,11 @@ def resolve(city_id: str, raw_name: str | None) -> Venue | None:
     return load().get(city_id, {}).get(k) if k else None
 
 
+def by_id(city_id: str, venue_id: str | None) -> Venue | None:
+    if not venue_id:
+        return None
+    return next((v for v in all_for(city_id) if v.id == venue_id), None)
+
+
 def all_for(city_id: str) -> list[Venue]:
     return list({v.id: v for v in load().get(city_id, {}).values()}.values())

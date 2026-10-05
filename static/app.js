@@ -40,6 +40,11 @@
   map.addLayer(cluster);
   let me = null, circle = null;
   const byId = new Map();        // id -> { e, marker, card }
+  /* Un déplacement de carte fait par le CODE (sélection d'un événement, cadrage, géoloc)
+     ne doit pas être pris pour un geste de l'utilisateur : sinon il relancerait une
+     recherche centrée sur le marqueur et refermerait la fiche. */
+  let quiet = 0;
+  const quietly = (fn) => { quiet++; try { fn(); } finally { setTimeout(() => { quiet = Math.max(0, quiet - 1); }, 1200); } };
   let selectedId = null;
 
   const colorOf = (e) => (e.price_type === "free" ? "#4fd694" : "#f0a93c");
@@ -134,8 +139,7 @@
     list.appendChild(ul);
     // Ne recadrer que sur une vraie nouvelle recherche : jamais après un pan/zoom manuel.
     if (fit && bounds.length) {
-      map._justFit = true;
-      map.fitBounds(state.located ? bounds.concat([[state.lat, state.lon]]) : bounds, { padding: [30, 30], maxZoom: 15 });
+      quietly(() => map.fitBounds(state.located ? bounds.concat([[state.lat, state.lon]]) : bounds, { padding: [30, 30], maxZoom: 15 }));
     }
   }
 
@@ -148,7 +152,7 @@
     selectedId = id;
     cur.marker.setStyle(styleOf(cur.e, true)); cur.marker.bringToFront?.();
     cur.card.classList.add("active"); cur.card.setAttribute("aria-pressed", "true");
-    if (pan) cluster.zoomToShowLayer(cur.marker, () => map.panTo(cur.marker.getLatLng()));
+    if (pan) quietly(() => cluster.zoomToShowLayer(cur.marker, () => map.panTo(cur.marker.getLatLng())));
     if (open) openDetail(cur.e); else cur.card.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
   list.addEventListener("click", (ev) => {
@@ -183,7 +187,7 @@
         ${off ? `<a class="btn" target="_blank" rel="noopener nofollow" href="${esc(off)}">${esc(t("official"))}</a>` : ""}
         <button class="btn" type="button" id="share">${esc(t("share"))}</button>
       </div>
-      <p class="prov">${esc(t("source"))} : ${esc(sourceLabel(e.source))}${e.last_seen ? ` · ${esc(t("updated"))} ${esc(new Date(e.last_seen).toLocaleDateString(I.locale, { day: "numeric", month: "short", timeZone: CITY.timezone }))}` : ""}</p>`;
+      <p class="prov">${esc(t("source"))}${LANG === "fr" ? " : " : ": "}${esc(sourceLabel(e.source))}${e.last_seen ? ` · ${esc(t("updated"))} ${esc(new Date(e.last_seen).toLocaleDateString(I.locale, { day: "numeric", month: "short", timeZone: CITY.timezone }))}` : ""}</p>`;
     list.hidden = true; status.hidden = true; detail.hidden = false;
     sheetState("half", false);
     detail.querySelector("h2").focus();
@@ -303,7 +307,7 @@
           state.located = false; state.lat = CITY.center.lat; state.lon = CITY.center.lon;
           suggestCity(here); load(); return;
         }
-        state.lat = here.lat; state.lon = here.lon; map.setView([state.lat, state.lon], Math.max(CITY.zoom, 13)); load();
+        state.lat = here.lat; state.lon = here.lon; quietly(() => map.setView([state.lat, state.lon], Math.max(CITY.zoom, 13))); load();
       },
       (err) => { geoNote = err && err.code === 1 ? t("geo_denied") : t("geo_unavailable"); status.textContent = ""; say(geoNote, "info"); },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 },
@@ -318,7 +322,7 @@
   /* Déplacer la carte redéfinit le centre de recherche (avec un délai pour ne pas mitrailler l'API). */
   let moveTimer = null;
   map.on("moveend", () => {
-    if (map._justFit) { map._justFit = false; return; }
+    if (quiet > 0 || !detail.hidden) return;      // geste du code, ou fiche ouverte : ne pas relancer
     clearTimeout(moveTimer);
     moveTimer = setTimeout(() => { const c = map.getCenter(); state.lat = c.lat; state.lon = c.lng; load(false); }, 500);
   });
@@ -333,11 +337,14 @@
   }
   let CITIES = [];
   function suggestCity(here) {
+    const box = $("#suggest");
     const near = CITIES.filter((c) => c.id !== CITY.id && distKm(here, c.center) <= 60);
-    if (near.length !== 1) { geoNote = t("geo_unavailable"); say(geoNote, "info"); return; }
+    if (near.length !== 1) { box.hidden = true; geoNote = t("geo_unavailable"); say(geoNote, "info"); return; }
     const c = near[0], name = c.names[LANG] || c.names.en || c.id;
-    notice.hidden = false; notice.className = "notice info";
-    notice.innerHTML = `${esc(t("suggest_city", { city: name }))} <a class="chip" href="${esc(pathFor(c.id, LANG === "ar" || LANG === "fr" ? (c.languages.includes(LANG) ? LANG : c.default_language) : c.default_language, c.default_language, "/carte"))}">${esc(t("yes_go", { city: name }))}</a>`;
+    const lang = c.languages.includes(LANG) ? LANG : c.default_language;
+    box.hidden = false;
+    box.innerHTML = `${esc(t("suggest_city", { city: name }))} <a class="chip" href="${esc(pathFor(c.id, lang, c.default_language, "/carte"))}">${esc(t("yes_go", { city: name }))}</a> <button class="chip" type="button">${esc(t("dismiss"))}</button>`;
+    box.querySelector("button").addEventListener("click", () => { box.hidden = true; });
   }
   fetch("/api/cities").then((r) => r.json()).then(({ cities }) => {
     CITIES = cities;
@@ -352,7 +359,7 @@
     if (cities.length < 2) sel.closest(".sw").hidden = true;
   }).catch(() => { $("#city-select").closest(".sw").hidden = true; });
 
-  try { localStorage.setItem("em_city", CITY.id); } catch { /* ignoré */ }
+  try { localStorage.setItem("em_city", CITY.id); localStorage.setItem("em_lang", LANG); } catch { /* ignoré */ }
   const langs = $("#lang-links");
   if ((CITY.languages || []).length > 1) {
     const names = { en: "EN", ar: "ع", fr: "FR" };

@@ -25,6 +25,7 @@ _FR = {
     "gate_desc": "Choisissez votre ville : Paris ou Djeddah.",
     "gate_h1": "Où sortez-vous ?",
     "soon": "D'autres villes bientôt",
+    "sources": "Sources", "maps": "Cartes",
 }
 
 _EN = {
@@ -42,6 +43,7 @@ _EN = {
     "gate_desc": "Pick your city: Paris or Jeddah.",
     "gate_h1": "Where are you going out?",
     "soon": "More cities coming soon",
+    "sources": "Sources", "maps": "Maps",
 }
 
 _AR = {
@@ -59,6 +61,7 @@ _AR = {
     "gate_desc": "اختر مدينتك: باريس أو جدة.",
     "gate_h1": "أين تريد الخروج؟",
     "soon": "مدن أخرى قريبًا",
+    "sources": "المصادر", "maps": "الخرائط",
 }
 
 _ALL = {"fr": _FR, "en": _EN, "ar": _AR}

@@ -34,6 +34,7 @@ import render
 import sources
 import sources_paris
 import timewin
+import venues
 
 log = logging.getLogger("eventmap")
 logging.basicConfig(
@@ -359,6 +360,9 @@ def _localize(row: dict, lang: str | None, city: cities.City) -> None:
     raw = row.pop("i18n", None)
     alts = json.loads(raw) if raw else {}
     row["languages"] = sorted({row.get("lang") or city.default_language, *alts})
+    v = venues.by_id(city.id, row.get("venue_id"))
+    if v and lang:
+        row["venue"] = v.name(lang)          # le lieu s'affiche dans la langue de l'interface
     if lang and lang in alts and lang != row.get("lang"):
         alt = alts[lang]
         row["title_original"] = row["title"]

@@ -15,7 +15,15 @@
   try { last = localStorage.getItem("em_city"); } catch { /* navigation privée */ }
   const wantsChoice = new URLSearchParams(location.search).has("choose");
   const known = cards.find((c) => c.dataset.city === last);
-  if (known && !wantsChoice) { location.replace(known.getAttribute("href")); return; }
+  if (known && !wantsChoice) {
+    // Même langue que la dernière visite, si la ville la propose.
+    let lang = null;
+    try { lang = localStorage.getItem("em_lang"); } catch { /* ignoré */ }
+    const c = cities.find((x) => x.id === last);
+    const href = known.getAttribute("href");
+    location.replace(c && lang && lang !== c.default_language && c.languages.includes(lang) ? `/${lang}${href}` : href);
+    return;
+  }
 
   cards.forEach((c) => c.addEventListener("click", () => {
     try { localStorage.setItem("em_city", c.dataset.city); } catch { /* ignoré */ }

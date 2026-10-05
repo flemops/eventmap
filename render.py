@@ -69,12 +69,14 @@ def asset_version() -> str:
     return h.hexdigest()[:10]
 
 
-def footer_html(city: cities.City) -> str:
+def footer_html(city: cities.City, lang: str = "fr") -> str:
+    s = i18n.strings(lang)
     srcs = [s for s in registry.by_city(registry.load(), city.id) if s.runnable() and s.attribution]
     links = " · ".join(f'<a href="{_esc(s.home)}" rel="noopener">{_esc(s.attribution)}</a>' if s.home
                        else _esc(s.attribution) for s in srcs)
     osm = '<a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a>'
-    return (f"Sources : {links}. " if links else "") + f"Cartes © {osm}."
+    colon = " : " if lang == "fr" else ": "
+    return (f"{s['sources']}{colon}{links}. " if links else "") + f"{s['maps']} © {osm}."
 
 
 def _fill(tpl: str, tokens: dict[str, str]) -> str:
@@ -194,7 +196,7 @@ def _page(name: str, city: cities.City, lang: str, site: str, *, suffix: str, ti
         "MAP_URL": _esc(city_path(city, lang, "/carte")), "HOME_URL": _esc(city_path(city, lang)),
         "CITY_NAME": _esc(city.name(lang)),
         "SEO_EVENTS": _events_html(events or [], city, lang),
-        "SEO_NOSCRIPT": _esc(s["noscript"]), "V": asset_version(), "FOOTER": footer_html(city),
+        "SEO_NOSCRIPT": _esc(s["noscript"]), "V": asset_version(), "FOOTER": footer_html(city, lang),
         **{k: v for k, v in (extra or {}).items()},
     }
     resp = HTMLResponse(_fill(_template(name), tokens))
