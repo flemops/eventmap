@@ -428,6 +428,15 @@ lieux:
                 # lieu déclaré par le flux FICEP peut donc être faux. À surveiller
                 # avant de publier largement cette culture.
 
+  # --- AJOUT DU 06/10/2026 : CORÉE ---------------------------------------
+  # Constaté dans le flux FICEP en direct le 06/10/2026 : 124 des événements à
+  # venir ont pour lieu « CENTRE CULTUREL CORÉEN - 20 Rue La Boétie » — le
+  # deuxième lieu du flux après l'Institut suédois, et jusqu'ici sans culture.
+  # Institut culturel d'État, même statut que les autres lieux de cette liste.
+  - nom: "Centre culturel coréen"
+    culture: coree
+    fiche: {}   # Fiche détaillée (horaires, tarifs, accès) à sourcer sur le site officiel.
+
   # --- LIEUX FICEP VOLONTAIREMENT NON MAPPÉS (décision du 03/09) ---------
   # turquie  : Yunus Emre Institut — le site de l'antenne France ne publie
   #            aucune programmation parisienne, exclusivité invérifiable.
@@ -450,3 +459,4 @@ cultures:
   irlande:              { nom: "Irlande" }
   italie:               { nom: "Italie" }
   pologne:              { nom: "Pologne" }
+  coree:                { nom: "Corée" }
