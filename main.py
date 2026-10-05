@@ -28,6 +28,7 @@ from fastapi.staticfiles import StaticFiles
 import cities
 import cultures
 import db
+import linkcheck
 import pipeline
 import registry
 import render
@@ -215,6 +216,13 @@ async def refresh() -> list[sources.SourceResult]:
                 n = db.upsert_events(con, all_events)
                 dedup_counts = sources.dedup_inter_source(con, now=started)
                 purged = db.purge_past(con)
+                links = {}
+                for c in cities.all_active():
+                    if c.features.get("linkcheck"):
+                        async with sources.PoliteClient(timeout=10.0) as lc:
+                            links[c.id] = await linkcheck.run(con, lc, c.id, started)
+                if links:
+                    _refresh_state["links"] = links
 
             ok = sum(1 for r in results if r.ok)
             log.info("refresh terminé en %.1fs : %d/%d sources OK, %d créneaux, %d upserts, "
@@ -448,6 +456,9 @@ def api_events(
         if c.features.get("cultures"):
             r["culture"] = cultures.for_venue(r.get("venue"), r.get("title"), r.get("description"))
         r["is_free"] = r["price_type"] == "free"
+        if r.pop("link_status", None) == "dead":
+            r["link_dead"] = True              # lien mort : le front n'affiche ni « Réserver » ni « Page officielle »
+            r["url"] = r["booking_url"] = None
         r["stale"] = (r.get("last_seen") or "") < stale_before.isoformat(timespec="seconds")
         _localize(r, lang, c)
 
@@ -479,6 +490,9 @@ def api_event(event_id: int, city: str = Query(cities.DEFAULT_CITY, pattern="^[a
         if r["doublon_de"]:
             canon = con.execute("SELECT id FROM events WHERE id = ?", (r["doublon_de"],)).fetchone()
     r["last_seen"] = r.pop("ingested_at")
+    if r.pop("link_status", None) == "dead":
+        r["link_dead"] = True
+        r["url"] = r["booking_url"] = None
     r["provenance"] = {
         "source": r["source"], "source_id": r["source_id"], "url": r["url"],
         "first_seen": r["first_seen"], "last_seen": r["last_seen"],

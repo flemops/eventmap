@@ -65,7 +65,7 @@ cities:
     night_cutoff_hour: 5
     home: carte
     default_price: ""
-    features: {cultures: false}
+    features: {cultures: false, linkcheck: true}
     # Premier niveau de catégories affiché (13.23). Les clés sont celles du
     # vocabulaire commun (sources.CATEGORY_KEYWORDS) ; seules les catégories qui
     # ont de vrais événements à venir sont montrées.

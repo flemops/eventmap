@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS events (
     last_changed TEXT,
     content_hash TEXT,
     dedup_reason TEXT,
+    link_status  TEXT,                      -- ok|dead|unknown (linkcheck.py)
+    link_checked TEXT,
     UNIQUE (source, source_id, start)
 );
 CREATE INDEX IF NOT EXISTS idx_events_start ON events (start);
@@ -176,6 +178,7 @@ def _migrate(con: sqlite3.Connection) -> None:
         "booking_url": "TEXT", "lang": "TEXT", "i18n": "TEXT",
         "status": "TEXT NOT NULL DEFAULT 'active'", "geo_source": "TEXT", "venue_id": "TEXT",
         "first_seen": "TEXT", "last_changed": "TEXT", "content_hash": "TEXT", "dedup_reason": "TEXT",
+        "link_status": "TEXT", "link_checked": "TEXT",
     }
     first_run = "first_seen" not in cols
     for name, decl in added.items():
@@ -401,7 +404,7 @@ def search(
         SELECT id, source, source_id, start, end, title, description, venue,
                address, city, lat, lon, price_type, category, url,
                city_id, currency, price_min, price_max, booking_url, lang, i18n,
-               status, geo_source, venue_id, ingested_at AS last_seen, first_seen, last_changed,
+               status, geo_source, venue_id, link_status, ingested_at AS last_seen, first_seen, last_changed,
                haversine_km(lat, lon, :lat, :lon) AS distance_km
         FROM events
         WHERE {' AND '.join(clauses)}

@@ -164,7 +164,7 @@
   let lastFocus = null;
   function openDetail(e) {
     lastFocus = document.activeElement;
-    const book = safeHref(e.booking_url), off = safeHref(e.url);
+    const book = e.link_dead ? "" : safeHref(e.booking_url), off = e.link_dead ? "" : safeHref(e.url);
     const price = priceText(e);
     const home = PATHS.home.replace(/\/$/, "");
     const share = `${location.origin}${home}/e/${e.id}`;

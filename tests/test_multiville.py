@@ -751,3 +751,65 @@ def test_une_seule_ville_active_garde_slash_comme_canonique(client):
     html = client.get("/").text
     assert 'rel="canonical" href="https://eventmap.hamdy-tabsissi.com/"' in html
     assert client.get("/paris").text.count('rel="canonical" href="https://eventmap.hamdy-tabsissi.com/"') == 1
+
+
+# ============================================================ liens morts (13.47)
+
+def _client_with(handler):
+    import httpx
+    c = sources.PoliteClient(min_interval=0, public_only=False)
+    c._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=False)
+    return c
+
+
+def test_verdict_d_un_lien():
+    import httpx
+    import linkcheck
+
+    async def go():
+        codes = {"/gone": 404, "/ok": 200, "/robots": 403, "/boom": 503}
+        c = _client_with(lambda req: httpx.Response(codes[req.url.path]))
+        async with c:
+            return [await linkcheck.check_url(c, f"https://exemple.test{p}") for p in codes]
+
+    assert asyncio.run(go()) == ["dead", "ok", "ok", "unknown"]
+
+
+def test_lien_mort_masque_les_boutons_mais_garde_la_trace(client, base_temp, jeddah_on):
+    import httpx
+    import linkcheck
+    now = datetime.now(UTC) + timedelta(hours=2)
+    _put(base_temp, [_jed("Gala", now, url="https://exemple.test/gone", booking_url="https://exemple.test/gone"),
+                     _jed("Concert", now, source_id="c2", url="https://exemple.test/ok")])
+
+    async def go():
+        c = _client_with(lambda req: httpx.Response(404 if req.url.path == "/gone" else 200))
+        con = db.connect(base_temp)
+        async with c:
+            res = await linkcheck.run(con, c, "jeddah", datetime.now(UTC))
+        con.commit()
+        con.close()
+        return res
+
+    assert asyncio.run(go()) == {"checked": 2, "dead": 1}
+    evs = {e["title"]: e for e in client.get("/api/events", params={"city": "jeddah", "radius": 30, "when": "week"}).json()["events"]}
+    assert evs["Gala"]["link_dead"] is True and evs["Gala"]["url"] is None and evs["Gala"]["booking_url"] is None
+    assert "link_dead" not in evs["Concert"] and evs["Concert"]["url"] == "https://exemple.test/ok"
+    con = db.connect(base_temp)
+    assert con.execute("SELECT url FROM events WHERE title = 'Gala'").fetchone()[0] == "https://exemple.test/gone"  # trace conservée
+    con.close()
+
+
+def test_linkcheck_respecte_son_budget_et_ne_reverifie_pas_trop_vite(con):
+    import httpx
+    import linkcheck
+    t = datetime.now(UTC) + timedelta(hours=3)
+    db.upsert_events(con, [_jed(f"E{i}", t + timedelta(minutes=i), source_id=str(i), url=f"https://exemple.test/{i}") for i in range(10)])
+
+    async def go(budget):
+        c = _client_with(lambda req: httpx.Response(200))
+        async with c:
+            return await linkcheck.run(con, c, "jeddah", datetime.now(UTC), budget=budget)
+
+    assert asyncio.run(go(4))["checked"] == 4
+    assert asyncio.run(go(100))["checked"] == 6          # les 4 premiers ne sont pas revus avant 2 jours

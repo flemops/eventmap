@@ -131,3 +131,24 @@ body.gate h1 { margin: 0; font-size: 28px; text-align: center; letter-spacing: -
 .city-card .go { margin-top: 8px; color: var(--accent); font-weight: 700; }
 .soon { color: var(--muted); font-size: 14px; }
 .gate-geo { display: grid; gap: 8px; justify-items: center; text-align: center; }
+
+/* Zones tactiles : 44 px minimum (WCAG 2.5.8 vise 24, les guides mobiles 44). */
+@media (pointer: coarse) {
+  .chip, .langs a, select.chip, .detail .back { min-height: 44px; display: inline-flex; align-items: center; }
+  .langs a { padding-inline: 12px; }
+  .notice button, .notice a.chip { min-height: 40px; }
+}
+
+/* Contrastes (mesurés le 06/10/2026, WCAG AA = 4,5:1). Le rose d'accent historique donne
+   3,78:1 pour du texte blanc dessus et 4,41:1 en texte sur fond sombre : insuffisant pour
+   du texte courant. Deux jetons dédiés aux pages de ville, sans toucher à common.css :
+   fond de bouton #d1215a (blanc dessus : 5,15:1) et texte d'accent #ff7a9f (6,77:1 sur
+   le panneau, 7,5:1 sur le fond). En thème clair, #c81155 (5,73:1) convient déjà ; le
+   vert « gratuit » passe de #1f8a5c (4,33:1) à #17734d (5,84:1). */
+body.carte-page, body.gate { --accent-bg: #d1215a; --accent-fg: #ff7a9f; }
+@media (prefers-color-scheme: light) {
+  body.carte-page, body.gate { --accent-bg: #c81155; --accent-fg: #c81155; --free: #17734d; }
+}
+.carte-page .chip[aria-pressed="true"], .btn.primary { background: var(--accent-bg); border-color: var(--accent-bg); }
+.detail .back, .city-card .go, .leaflet-popup-content a { color: var(--accent-fg); }
+.langs a[aria-current="true"] { border-color: var(--accent-fg); }
