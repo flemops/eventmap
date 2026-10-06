@@ -15,6 +15,9 @@ serait pire que ne rien afficher.
 | **webook.com** | Application monopage, aucun balisage `Event`, pas de flux. Les données passent par `api.webook.com`, interface privée non documentée. `robots.txt` n'interdit que les pages de paiement. | Pas de licence de réutilisation publiée ; pas d'API partenaire publique. | **Bloquée** : pas de méthode stable *et* autorisée. Rien à bricoler. |
 | **Ministry of Culture / Red Sea Museum / Jeddah Historic District Program** | Recherche du 06/10/2026 : programmes annoncés par la presse (Arab News, SPA) et par l'application mobile « Historic Jeddah » ; aucun flux iCalendar/JSON ni page d'événements structurée publique identifiée. Les domaines officiels testés (`moc.gov.sa`, `redseamuseum.sa`, `jeddahhistoric.sa`…) ne répondent pas depuis ici (DNS). | Non évaluables : pas de page source stable à examiner. | **Aucune source exploitable trouvée** — à reprendre si un organisme publie un flux ou accorde un accès |
 
+| **Portail Open Data saoudien** (`open.data.gov.sa`, API ouverte, licences ouvertes) | Injoignable depuis ce poste le 06/10/2026 (aucune réponse : filtrage géographique probable). D'après la recherche, le seul jeu « événements culturels » publié concerne **AlUla** (dernière mise à jour août 2022), pas Jeddah. | Licences ouvertes par jeu de données. | **Aucun jeu d'événements de Jeddah identifié** — à reprendre depuis une adresse saoudienne ou si Hamdy en connaît un |
+| **Flux iCalendar / OpenAgenda pour Jeddah** | Recherche du 06/10/2026 : aucun agenda public jeddawi trouvé (seulement des agendas d'institutions, ex. KAUST). | — | **Aucune source** |
+
 ## Ce qui est possible aujourd'hui
 
 * **Référentiel de lieux** : `venues/jeddah.yaml`, coordonnées OpenStreetMap (ODbL),
