@@ -483,6 +483,10 @@ def set_priorities(mapping: dict[str, int]) -> None:
     _PRIORITY.update(mapping)
 
 
+def _fresh(r: dict) -> tuple[int, str]:
+    return _priority(r["source"]), r["updated_at"] or ""
+
+
 def _priority(source: str) -> int:
     return _PRIORITY.get(source, 0)
 
@@ -580,7 +584,7 @@ def dedup_inter_source(con, *, now: datetime | None = None) -> dict[str, int]:
     horizon = _iso(now - timedelta(days=1))
     rows = [dict(r) for r in con.execute(
         "SELECT id, source, source_id, title, start, lat, lon, venue, venue_id, "
-        "description, price_type, url, city_id, category, lang, i18n, status "
+        "description, price_type, url, city_id, category, lang, i18n, status, updated_at "
         "FROM events WHERE start >= ?",
         (horizon,),
     )]
@@ -667,12 +671,13 @@ def dedup_inter_source(con, *, now: datetime | None = None) -> dict[str, int]:
             if len(cluster) < 2:
                 continue
             counts[kind] += len(cluster) - 1
-            # Le survivant : la source de plus haute priorite, puis le plus ancien enregistrement.
-            top = max(cluster, key=lambda r: (_priority(r["source"]), -r["id"]))
+            # Le survivant : la source de plus haute priorite, puis la donnee la plus recente
+            # (date de mise a jour de la SOURCE), puis le plus ancien enregistrement.
+            top = max(cluster, key=lambda r: _fresh(r) + (-r["id"],))
             if kind == "forte":
                 merged_id = _merge_fields(con, cluster)
                 merged = next(r for r in cluster if r["id"] == merged_id)
-                winner_id = top["id"] if _priority(top["source"]) > _priority(merged["source"]) else merged_id
+                winner_id = top["id"] if _fresh(top) > _fresh(merged) else merged_id
             else:
                 winner_id = top["id"]
             # Un "annule" d'une source au moins aussi prioritaire que le survivant gagne.
@@ -681,6 +686,12 @@ def dedup_inter_source(con, *, now: datetime | None = None) -> dict[str, int]:
                    and _priority(r["source"]) >= _priority(w["source"])]
             if neg:
                 con.execute("UPDATE events SET status = ? WHERE id = ?", (neg[0]["status"], winner_id))
+                # Le doublon écarté ne reste pas « active » : un lien direct vers
+                # l'ancienne occurrence (/api/events/<id>) dirait sinon le contraire
+                # de la source officielle. Réécrit à chaque cycle, après l'upsert.
+                for r in cluster:
+                    if r["id"] != winner_id and r["status"] == "active":
+                        con.execute("UPDATE events SET status = ? WHERE id = ?", (neg[0]["status"], r["id"]))
             for r in cluster:
                 if r["id"] != winner_id:
                     con.execute("UPDATE events SET doublon_de = ?, dedup_reason = ? WHERE id = ?",
