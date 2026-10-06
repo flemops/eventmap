@@ -9,8 +9,8 @@
 # le CD en quarantaine sans jamais réparer quoi que ce soit. Versions =
 # celles vérifiées en production (`pip freeze` sur /opt/eventmap/.venv).
 # Même logique déjà appliquée à observatory.
-fastapi==0.141.1
-uvicorn[standard]==0.52.4
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
 httpx==0.28.1
 icalendar==7.3.0
 python-dateutil==2.9.0.post0
