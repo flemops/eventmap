@@ -1,17 +1,14 @@
 name: Vérification post-déploiement
 
-# Le déploiement est PULL côté VM (aucun secret d'accès ici) : après `prod-tag.yml`, la VM récupère le
+# Le déploiement est PULL côté VM (aucun secret d'accès ici) : après le tag `prod` (`prod-tag.yml`), la VM récupère le
 # tag `prod` à son rythme. Ce workflow attend que CE commit soit réellement en service (/health.release.commit),
 # puis rejoue deploy/verify_prod.py — lecture seule, aucune écriture, aucun accès à la VM. Un déploiement
 # n'est « réussi » que s'il passe ici ; sinon le workflow échoue et GitHub prévient par courriel.
 # Rollback : déplacer le tag `prod` sur le commit précédent (docs/release.md).
 
 on:
-  workflow_run:
-    workflows: ["Validation + tag prod"]
-    types: [completed]
-    branches: [master]
-  workflow_dispatch:
+  workflow_call:        # appelé par prod-tag.yml juste après le déplacement du tag `prod`
+  workflow_dispatch:    # re-vérifier à la main (EXPECTED_COMMIT = le commit de la branche choisie)
 
 permissions:
   contents: read
@@ -22,11 +19,10 @@ concurrency:
 
 jobs:
   verifier:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      EXPECTED_COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+      EXPECTED_COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
