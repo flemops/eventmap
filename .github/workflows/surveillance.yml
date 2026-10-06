@@ -88,3 +88,19 @@ jobs:
           for n in $(gh issue list --label alerte-donnees --state open --json number --jq '.[].number'); do
             gh issue close "$n" --comment "Retour à la normale ($(date -u +%FT%TZ)) : /health?strict=1 répond 200, aucune alerte."
           done
+
+  archive-alimconfiance:
+    # Chien de garde de l'archive Alim'Confiance (flemops/alimconfiance-archive) : un instantané
+    # par semaine (lundi). Plus de 10 jours sans nouveau commit = l'archive a raté un cycle (et
+    # l'historique, seul actif défendable de ce projet, a un trou). Échec = courriel GitHub.
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Dernier instantané < 10 jours
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          d=$(gh api "repos/flemops/alimconfiance-archive/commits?per_page=1" --jq '.[0].commit.committer.date')
+          age=$(( ( $(date -u +%s) - $(date -u -d "$d" +%s) ) / 86400 ))
+          echo "Dernier instantané : $d ($age jour(s))"
+          [ "$age" -le 10 ]
