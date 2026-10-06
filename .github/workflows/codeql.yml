@@ -1,0 +1,30 @@
+name: CodeQL
+
+# Analyse statique de sécurité (Python + JavaScript du front). Gardée seulement si elle s'exécute
+# réellement : sur un dépôt privé sans GitHub Advanced Security, le dépôt des résultats est refusé —
+# voir docs/decisions.md (D20) pour la décision et le critère de réactivation (dépôt public).
+
+on:
+  pull_request:
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: github/codeql-action/init@88585263c0627ee42c0e1c5143a112c8d6f4aa18  # v4.38.2
+        with:
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/analyze@88585263c0627ee42c0e1c5143a112c8d6f4aa18  # v4.38.2
