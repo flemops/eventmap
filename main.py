@@ -555,8 +555,71 @@ def api_categories(city: str | None = Query(None, pattern="^[a-z][a-z0-9-]{1,30}
             "groups": [g for g in groups if g["count"]]}
 
 
+_STARTED = datetime.now(timezone.utc)
+STARTUP_GRACE = timedelta(minutes=20)       # le premier cycle part 5 s apres le demarrage et dure ~1-2 min
+
+
+def compute_alerts(con, now: datetime) -> list[dict]:
+    """Ce qui justifie d'etre reveille - par ville et par source (13.53).
+
+    Sert `/health?strict=1` (HTTP 503 s'il y a quoi que ce soit) et le champ `alerts` de
+    `/health`. Chaque alerte a un `kind` stable, utilisable comme mot-cle par un outil de
+    surveillance :
+
+      refresh_stalled   la boucle de rafraichissement ne tourne plus (plus de cycle depuis
+                        plus de deux intervalles) ;
+      refresh_failed    le dernier cycle s'est interrompu ;
+      never_ingested    une source qui devrait tourner n'a jamais rien rapporte ;
+      ingestion_errors  3 cycles d'erreurs de suite ;
+      silent_source     elle repond mais ne rapporte plus rien (2 cycles vides de suite) ;
+      stale_data        la derniere donnee recue est plus vieille que `stale_after_hours` ;
+      geocoding         plus de 30 % des evenements valides sans coordonnees.
+
+    Seules les villes ALLUMEES comptent : une ville eteinte, ou une source non autorisee,
+    n'est pas une panne.
+    """
+    out: list[dict] = []
+    uptime = now - _STARTED
+    last = _refresh_state.get("last_run")
+    if last:
+        age = now - datetime.fromisoformat(last)
+        if age > timedelta(seconds=2 * REFRESH_INTERVAL + 1800):
+            out.append({"kind": "refresh_stalled", "city": None, "source": None,
+                        "detail": f"dernier cycle il y a {age.total_seconds() / 3600:.1f} h"})
+    elif uptime > STARTUP_GRACE:
+        out.append({"kind": "refresh_stalled", "city": None, "source": None,
+                    "detail": "aucun cycle depuis le demarrage"})
+    if any(r.get("source") == "refresh" and not r.get("ok") for r in _refresh_state.get("last_results", [])):
+        out.append({"kind": "refresh_failed", "city": None, "source": None, "detail": "cycle interrompu"})
+
+    specs = registry.load()
+    for c in cities.all_active():
+        report = {r["source"]: r for r in db.source_report(con, c.id)}
+        for s in registry.by_city(specs, c.id):
+            if not s.runnable():
+                continue
+            r = report.get(s.key)
+            base = {"city": c.id, "source": s.id}
+            if r is None:
+                if uptime > STARTUP_GRACE:
+                    out.append({**base, "kind": "never_ingested", "detail": "aucune donnee recue"})
+                continue
+            if (r.get("error_streak") or 0) >= 3:
+                out.append({**base, "kind": "ingestion_errors", "detail": f'{r["error_streak"]} cycles en erreur'})
+            if (r.get("empty_streak") or 0) >= 2:
+                out.append({**base, "kind": "silent_source", "detail": f'{r["empty_streak"]} cycles vides'})
+            age_h = r.get("data_age_h")
+            if age_h is not None and age_h > c.stale_after_hours:
+                out.append({**base, "kind": "stale_data",
+                            "detail": f"donnee vieille de {age_h} h (seuil {c.stale_after_hours} h)"})
+            valid = r.get("last_valid") or 0
+            if valid >= 10 and (r.get("geo_missing") or 0) / valid > 0.3:
+                out.append({**base, "kind": "geocoding", "detail": f'{r["geo_missing"]}/{valid} sans coordonnees'})
+    return out
+
+
 @app.get("/health")
-def health():
+def health(strict: bool = Query(False, description="503 s'il y a une alerte (surveillance externe)")):
     now = datetime.now(timezone.utc)
     with db.session() as con:
         s = db.stats(con)
@@ -567,6 +630,7 @@ def health():
         states = {c.id: _data_state(con, c, now) for c in cities.all_active()}
     with db.session() as con:
         silent = db.silent_sources(con)
+        alerts = compute_alerts(con, now)
     degraded = any(not r["ok"] for r in _refresh_state["last_results"]) or bool(silent)
 
     city_body = {}
@@ -597,9 +661,13 @@ def health():
         "cultures": {"excluded_events": excluded},
         "dedup": _refresh_state["dedup"],
         "cities": city_body,
+        "alerts": alerts,
         "refresh": _refresh_state,
     }
-    return JSONResponse(body, status_code=200)
+    # Par defaut TOUJOURS 200, meme degrade : la sonde de disponibilite (Uptime Kuma) ne doit
+    # pas sonner pour un probleme de donnees alors que le service repond. La surveillance DES
+    # DONNEES interroge `/health?strict=1`, qui repond 503 des qu'il y a une alerte.
+    return JSONResponse(body, status_code=503 if (strict and alerts) else 200)
 
 
 @app.post("/api/refresh")

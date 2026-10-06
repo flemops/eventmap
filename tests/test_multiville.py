@@ -873,3 +873,74 @@ def test_dedup_rapide_et_identique_sur_un_gros_volume(con):
     # (mesuré le 06/10/2026 avec le code de master) : 14 forts + 16 faibles. Les « faibles »
     # sont de vrais rapprochements de l'algorithme (titres à un chiffre près dans le même lieu).
     assert (n["forte"], n["faible"], n["traduction"]) == (14, 16, 0)
+
+
+
+# ==================================================== alertes par ville et par source (13.53)
+
+def _iso(dt):
+    return dt.isoformat(timespec="seconds")
+
+
+def test_aucune_alerte_sur_un_service_sain(client, base_temp, monkeypatch):
+    con = db.connect(base_temp)
+    now = datetime.now(UTC)
+    db.record_source_health(con, "qfap", 120, now, city_id="paris")
+    db.record_source_health(con, registry.load()[1].url, 10, now, city_id="paris")
+    con.commit()
+    con.close()
+    monkeypatch.setitem(main._refresh_state, "last_run", _iso(now))
+    r = client.get("/health", params={"strict": 1})
+    assert r.status_code == 200 and r.json()["alerts"] == []
+
+
+@pytest.mark.parametrize("prepare,kind", [
+    (lambda c, now: [db.record_source_failure(c, "qfap", "x", now, city_id="paris") for _ in range(3)], "ingestion_errors"),
+    (lambda c, now: [db.record_source_health(c, "qfap", 0, now, city_id="paris") for _ in range(2)], "silent_source"),
+    (lambda c, now: c.execute("UPDATE source_health SET last_nonempty = '2020-01-01T00:00:00+00:00' WHERE source='qfap'"), "stale_data"),
+    (lambda c, now: db.record_source_health(c, "qfap", 100, now, city_id="paris", valid=100, geo_missing=60), "geocoding"),
+])
+def test_chaque_alerte_est_nommee_et_donne_503_en_mode_strict(client, base_temp, monkeypatch, prepare, kind):
+    con = db.connect(base_temp)
+    now = datetime.now(UTC)
+    db.record_source_health(con, "qfap", 120, now - timedelta(minutes=1), city_id="paris")
+    db.record_source_health(con, registry.load()[1].url, 10, now, city_id="paris")
+    prepare(con, now)
+    con.commit()
+    con.close()
+    monkeypatch.setitem(main._refresh_state, "last_run", _iso(now))
+    r = client.get("/health", params={"strict": 1})
+    assert r.status_code == 503
+    assert kind in {a["kind"] for a in r.json()["alerts"]}
+    # Sans strict : le meme etat reste 200 - la sonde de disponibilite ne sonne pas.
+    r = client.get("/health")
+    assert r.status_code == 200 and kind in {a["kind"] for a in r.json()["alerts"]}
+
+
+def test_alerte_refresh_arrete_et_periode_de_grace(base_temp, monkeypatch):
+    con = db.connect(base_temp)
+    now = datetime.now(UTC)
+    monkeypatch.setitem(main._refresh_state, "last_run", _iso(now - timedelta(hours=14)))
+    assert "refresh_stalled" in {a["kind"] for a in main.compute_alerts(con, now)}
+    monkeypatch.setitem(main._refresh_state, "last_run", _iso(now - timedelta(hours=5)))
+    assert "refresh_stalled" not in {a["kind"] for a in main.compute_alerts(con, now)}
+    # Tout juste demarre, aucun cycle encore : pas d'alerte (le premier part 5 s apres le demarrage).
+    monkeypatch.setitem(main._refresh_state, "last_run", None)
+    monkeypatch.setattr(main, "_STARTED", now - timedelta(minutes=2))
+    assert main.compute_alerts(con, now) == []
+    # Mais 30 minutes plus tard sans cycle ni donnee : on sonne.
+    monkeypatch.setattr(main, "_STARTED", now - timedelta(minutes=30))
+    kinds = {a["kind"] for a in main.compute_alerts(con, now)}
+    assert {"refresh_stalled", "never_ingested"} <= kinds
+    con.close()
+
+
+def test_une_ville_eteinte_ou_une_source_non_autorisee_ne_sonne_pas(base_temp, monkeypatch):
+    con = db.connect(base_temp)
+    now = datetime.now(UTC)
+    monkeypatch.setattr(main, "_STARTED", now - timedelta(hours=5))
+    monkeypatch.setitem(main._refresh_state, "last_run", _iso(now))
+    assert not [a for a in main.compute_alerts(con, now) if a["city"] == "jeddah"]
+    monkeypatch.setenv("EVENTMAP_CITIES_ENABLED", "jeddah")      # allumee mais sans source autorisee
+    assert not [a for a in main.compute_alerts(con, now) if a["city"] == "jeddah"]
+    con.close()

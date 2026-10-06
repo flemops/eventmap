@@ -86,10 +86,36 @@ de ce soir.
 | État par ville et par source | `curl -s localhost:8000/health` → `cities.<ville>.{data,sources,anomalies,not_running}` |
 | Forcer un cycle | `curl -X POST localhost:8000/api/refresh` (localhost seulement) |
 | Rôle d'un événement | `GET /api/events/{id}?city=…` → `provenance` |
+| Vérifier un déploiement | `python deploy/verify_prod.py` (51 contrôles sur le service réel, sans accès VM) |
+| Alertes de données | `GET /health?strict=1` : 503 + liste `alerts` (voir ci-dessous) |
 
 `data.state` : `unknown` (rien interrogé) · `ok` · `partial` (une source en retard ou en
 erreur) · `stale` (plus aucune donnée fraîche → `/health` passe `degraded`) · `no_sources`.
 Le front distingue « aucun événement » d'une panne de données (13.51).
+
+## Surveillance et alertes (13.53)
+
+Deux sondes distinctes pour qu'un problème de données n'ait jamais l'air d'une panne :
+
+| Sonde | Répond | Signifie |
+|---|---|---|
+| `GET /health` | 200 tant que l'application tourne | le service est joignable (disponibilité) |
+| `GET /health?strict=1` | **503** + `alerts` dès qu'il y a une alerte | les données sont malades |
+
+Alertes (`main.compute_alerts`, par ville ALLUMÉE et par source AUTORISÉE ; une ville éteinte ou une source
+non autorisée n'est pas une panne) : `refresh_stalled` (plus de cycle depuis > 2 intervalles + 30 min),
+`refresh_failed`, `never_ingested` (passé 20 min de grâce après démarrage), `ingestion_errors` (3 cycles
+d'erreur), `silent_source` (2 cycles vides), `stale_data` (> `stale_after_hours`), `geocoding` (> 30 % sans
+coordonnées).
+
+**Qui regarde** : `.github/workflows/surveillance.yml` interroge les deux sondes toutes les 2 h depuis GitHub,
+ouvre une issue `alerte-donnees` à la première alerte, la commente tant qu'elle dure et la ferme au retour à
+la normale (GitHub prévient par courriel). Pas de nouvelle stack : Uptime Kuma est derrière Cloudflare Access
+(compte admin à créer à la main) et Observatory n'envoie pas d'alertes.
+
+*Optionnel — Uptime Kuma* (à faire par Hamdy, une fois connecté) : monitor HTTP `https://eventmap.hamdy-tabsissi.com/health`
+(disponibilité) + monitor HTTP `https://eventmap.hamdy-tabsissi.com/health?strict=1`, code attendu 200, intervalle
+30 min, 3 tentatives avant alerte ; le corps de la réponse nomme la ville, la source et la cause.
 
 **Retour arrière** (testé le 06/10/2026 sur une base de 16 151 lignes réelles) : la migration
 est additive. L'ancien code (`master` avant le multi-ville) ouvre la base migrée, répond à

@@ -1,0 +1,79 @@
+name: Surveillance EventMap (disponibilité + données)
+
+# Pourquoi GitHub Actions et pas un nouvel outil : Uptime Kuma est derrière Cloudflare Access
+# (compte admin à créer à la main) et Observatory n'envoie pas d'alertes. GitHub est déjà là,
+# prévient par courriel et par issue, et ne demande aucun secret.
+#
+# Deux sondes distinctes, volontairement :
+#   1. /health            -> le SERVICE répond-il ? (toujours 200 tant que l'application tourne)
+#   2. /health?strict=1   -> les DONNÉES sont-elles saines ? 503 + liste `alerts` sinon :
+#      refresh_stalled, refresh_failed, never_ingested, ingestion_errors, silent_source,
+#      stale_data, geocoding — par ville et par source (voir main.compute_alerts).
+# Une alerte de données n'a donc jamais l'air d'une panne de disponibilité.
+#
+# Une issue « alerte-donnees » est ouverte à la première alerte, commentée tant qu'elle dure,
+# fermée au retour à la normale : une alerte = une conversation, pas un courriel toutes les 2 h.
+# Brancher Uptime Kuma en plus (optionnel) : monitor HTTP sur /health (disponibilité) et
+# monitor « mot-clé » sur /health?strict=1 qui doit répondre 200 — voir docs/multi-ville.md.
+
+on:
+  schedule:
+    - cron: "17 */2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  BASE: https://eventmap.hamdy-tabsissi.com
+
+jobs:
+  sonde:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Disponibilité (/health)
+        run: |
+          curl --fail --silent --show-error --max-time 20 --retry 3 --retry-delay 15 \
+               --retry-all-errors "$BASE/health" -o disponibilite.json
+          jq -e '.status' disponibilite.json
+
+      - name: Données (/health?strict=1)
+        id: donnees
+        run: |
+          code=$(curl --silent --show-error --max-time 30 --retry 2 --retry-delay 10 \
+                      -o sante.json -w '%{http_code}' "$BASE/health?strict=1")
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          {
+            echo "Sonde du $(date -u +%FT%TZ) — HTTP $code"
+            echo
+            jq -r '.alerts[]? | "- **\(.kind)** · ville \(.city // "—") · source \(.source // "—") : \(.detail)"' sante.json
+          } > alertes.md
+          cat alertes.md
+          if [ "$code" != "200" ] && [ "$code" != "503" ]; then
+            echo "Réponse inattendue ($code) : ce n'est pas une alerte de données mais une panne." >> alertes.md
+          fi
+          [ "$code" = "200" ]
+
+      - name: Suivre l'alerte (ouvrir / commenter)
+        if: failure() && steps.donnees.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create alerte-donnees --color B60205 --description "Alerte de données EventMap" 2>/dev/null || true
+          n=$(gh issue list --label alerte-donnees --state open --json number --jq '.[0].number // empty')
+          if [ -z "$n" ]; then
+            gh issue create --title "EventMap : alerte sur les données" --label alerte-donnees --body-file alertes.md
+          else
+            gh issue comment "$n" --body-file alertes.md
+          fi
+
+      - name: Retour à la normale (fermer l'alerte)
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for n in $(gh issue list --label alerte-donnees --state open --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "Retour à la normale ($(date -u +%FT%TZ)) : /health?strict=1 répond 200, aucune alerte."
+          done
