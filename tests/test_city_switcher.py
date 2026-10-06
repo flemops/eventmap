@@ -77,3 +77,13 @@ def test_une_ville_sans_teaser_ou_allumee_change_le_rendu(monkeypatch):
     import dataclasses
     monkeypatch.setitem(cities.load(), "jeddah", dataclasses.replace(cities.get("jeddah"), teaser=False))
     assert render.city_switch_html(p, "fr") == ""
+
+
+def test_la_carte_expose_le_panneau_filtres_et_un_selecteur_details(client):
+    html = client.get("/paris/carte").text
+    assert 'id="filters-panel"' in html and 'role="dialog"' in html
+    assert '<details class="cs">' in html and "<summary>Paris" in html
+    assert 'data-when="today"' in html and 'data-when="weekend"' in html and 'id="free"' in html
+    assert "cityswitch.js" in html and "app.js" in html
+    # Le Jeddah « bientôt » reste du texte : aucun lien, aucune route.
+    assert 'href="/jeddah' not in html
