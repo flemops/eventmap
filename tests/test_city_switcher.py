@@ -26,8 +26,8 @@ def client(tmp_path, monkeypatch):
 def test_le_selecteur_montre_paris_live_et_jeddah_coming_soon(client, path):
     html = client.get(path).text
     assert 'class="cityswitch"' in html
-    assert 'aria-current="page">Paris <span class="cs-badge live">Live</span>' in html
-    assert "Jeddah" in html and "Coming soon" in html
+    assert 'aria-current="page">Paris <span class="cs-badge live">En ligne</span>' in html
+    assert "Jeddah" in html and "Bientôt" in html and "Coming soon" not in html
     assert "est techniquement prête" in html
     assert "cityswitch.js" in html
 
@@ -49,7 +49,7 @@ def test_aucun_evenement_ni_donnee_jeddah_dans_les_pages(client):
     for path in ("/", "/paris/carte"):
         html = client.get(path).text
         # Les seules occurrences de « Jeddah » : le bouton, l'id du message et le message lui-même.
-        reste = html.replace("cs-msg-jeddah", "").replace("Jeddah est techniquement prête", "")                     .replace('Jeddah <span class="cs-badge">Coming soon', "")
+        reste = html.replace("cs-msg-jeddah", "").replace("Jeddah est techniquement prête", "")                     .replace('Jeddah <span class="cs-badge">Bientôt', "")
         assert "jeddah" not in reste.lower(), path
         assert "fixture" not in html.lower()
     assert client.get("/health").json()["cities"]["jeddah"]["enabled"] is False
@@ -70,7 +70,7 @@ def test_une_ville_sans_teaser_ou_allumee_change_le_rendu(monkeypatch):
     # Allumée : un vrai lien, plus de bouton « Coming soon ».
     monkeypatch.setenv("EVENTMAP_CITIES_ENABLED", "jeddah")
     html = render.city_switch_html(p, "fr")
-    assert 'href="/jeddah"' in html and "Coming soon" not in html and "<button" not in html
+    assert 'href="/jeddah"' in html and "Bientôt" not in html and "<button" not in html
     monkeypatch.delenv("EVENTMAP_CITIES_ENABLED")
     # Sans teaser : la ville éteinte disparaît (une seule ville → pas de sélecteur du tout).
     import dataclasses

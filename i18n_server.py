@@ -25,7 +25,7 @@ _FR = {
     "gate_desc": "Choisissez votre ville : Paris ou Djeddah.",
     "gate_h1": "Où sortez-vous ?",
     "soon": "D'autres villes bientôt",
-    "cs_label": "Ville", "cs_live": "Live", "cs_soon": "Coming soon",
+    "cs_label": "Ville", "cs_live": "En ligne", "cs_soon": "Bientôt",
     "cs_ready": "{city} est techniquement prête. Les événements seront en ligne dès qu'une source réutilisable sera disponible.",
     "sources": "Sources", "maps": "Cartes",
     "nf_title": "Page introuvable", "nf_msg": "Cette page ou cette ville n'est pas disponible. Choisissez une ville :",
