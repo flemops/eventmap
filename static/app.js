@@ -621,6 +621,9 @@
     geoBtn.setAttribute("aria-pressed", "false");
     load(false);
   });
+  // Un redimensionnement (rotation, barre d'adresse mobile, feuille du bas) déplace la carte sans
+  // geste de l'utilisateur : il ne doit jamais faire apparaître « Search this area ».
+  map.on("resize", () => quietly(() => {}));
   map.on("moveend", () => {
     const c = map.getCenter();
     if (quiet > 0) { anchor = c; return; }          // geste du code : la référence suit la carte
