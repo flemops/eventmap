@@ -4,7 +4,7 @@
 [![Prod gate](https://github.com/flemops/eventmap/actions/workflows/prod-tag.yml/badge.svg)](https://github.com/flemops/eventmap/actions/workflows/prod-tag.yml)
 
 **"What should I do tonight?" — one answer, not a catalogue.** EventMap aggregates public cultural
-events, de-duplicates them across sources, and opens on *tonight, within 2 km of you* instead of an
+events, de-duplicates them across sources, and opens on *tonight in your city* (free events first, no location permission needed) instead of an
 endless list. It is built as a small, operable production service: polite multi-source ingestion,
 reversible de-duplication, strict health checks, and a CI gate in front of every deploy.
 
@@ -13,6 +13,10 @@ reversible de-duplication, strict health checks, and a CI gate in front of every
 [Health](https://eventmap.hamdy-tabsissi.com/health) ·
 [Architecture](#architecture) ·
 [Run locally](#run-it-locally)
+
+<p align="center"><img src="docs/img/tonight-desktop.jpg" alt="EventMap, Tonight in Paris: list of events with top picks on the left, clustered map on the right" width="860"></p>
+<p align="center"><img src="docs/img/tonight-mobile.jpg" alt="EventMap on a phone: filters, map and bottom sheet" width="260"></p>
+<sub>Screenshots of the live service (production), captured on 07/10/2026 with Playwright.</sub>
 
 > Documentation under [`docs/`](docs/) is written in French (the product and its sources are French);
 > this README is the English entry point.
@@ -34,7 +38,7 @@ reversible de-duplication, strict health checks, and a CI gate in front of every
 
 Event apps optimise for browsing. The real question is *"what do I do tonight, close to me?"* — and a
 long list answers it badly. EventMap's constraint is **no choice paralysis**: the default view is
-tonight, 2 km around the user, free events by default (configurable per city); wider windows, categories and filters are one tap away.
+tonight in the chosen city, free events by default (configurable per city), distances shown only if you share your location; wider windows, categories and filters are one tap away.
 That product constraint drives the engineering: the answer is only trustworthy if duplicates are
 merged, cancelled events disappear, stale data is flagged, and an outage is never mistaken for
 "nothing on tonight".
@@ -186,6 +190,7 @@ git clone https://github.com/flemops/eventmap.git && cd eventmap
 python -m venv .venv && . .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt                 # runtime + dev tools (pytest, ruff, coverage, pip-audit)
 pytest                                              # offline test suite
+pip install -r requirements-e2e.txt && playwright install chromium && pytest tests/e2e   # real-browser journeys + axe (optional)
 ruff check .                                        # lint
 uvicorn main:app --reload                           # http://127.0.0.1:8000 (first refresh starts after ~5 s)
 ```
