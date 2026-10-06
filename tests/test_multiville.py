@@ -630,8 +630,9 @@ def test_registre_coherent_avec_les_villes():
 def test_kill_switch_de_source_et_de_ville_dans_le_refresh(con, monkeypatch):
     fetchers, by_key = main._build_fetchers(con)
     specs = {s.id: s for s in registry.load()}
-    assert set(by_key) == {"qfap", specs["ficep"].url, specs["bataclan"].url}
-    monkeypatch.setenv("EVENTMAP_SOURCES_DISABLED", "ficep,bataclan")
+    attendues = {s.key for s in specs.values() if s.runnable()}
+    assert set(by_key) == attendues and len(attendues) >= 4          # qfap + ficep + bataclan + openagenda-idf
+    monkeypatch.setenv("EVENTMAP_SOURCES_DISABLED", ",".join(i for i in specs if i != "qfap"))
     fetchers, by_key = main._build_fetchers(con)
     assert set(by_key) == {"qfap"}
     monkeypatch.setenv("EVENTMAP_CITIES_DISABLED", "paris")
@@ -1061,3 +1062,86 @@ def test_la_source_bataclan_est_declaree_et_lancable():
     assert b.kind == "jsonld_sitemap" and b.city_id == "paris" and b.authorization == "ok" and b.runnable()
     assert b.options["naive_utc_label"] is False and b.options["venue"]["lat"] == 48.8631
     assert registry.validate(list(specs.values())) == []
+
+
+# ================================================== OpenAgenda via Opendatasoft (2.5)
+
+_REC = {"uid": "96691677", "title_fr": "Exposition de Matthieu Ricard", "description_fr": "<p>Photographies</p>",
+        "conditions_fr": "Entrée libre", "keywords_fr": "exposition;photo", "location_name": "Galerie Livinec",
+        "location_address": "24 rue de Penthièvre, 75008 Paris", "location_city": "Paris",
+        "location_coordinates": {"lon": 2.315075, "lat": 48.872728}, "canonicalurl": "https://openagenda.com/x/events/y",
+        "updatedat": "2026-06-17T10:15:38+00:00",
+        "timings": json.dumps([{"begin": "2026-10-29T11:00:00+01:00", "end": "2026-10-29T19:00:00+01:00"},
+                               {"begin": "2026-10-31T11:00:00+01:00", "end": "2026-10-31T19:00:00+01:00"},
+                               {"begin": "2020-01-01T11:00:00+01:00", "end": "2020-01-01T19:00:00+01:00"}])}
+_WIN = (datetime(2026, 10, 1, tzinfo=UTC), datetime(2027, 1, 1, tzinfo=UTC))
+
+
+def test_ods_chaque_creneau_reel_devient_une_ligne_et_le_passe_est_ignore():
+    import sources_ods
+    evs = sources_ods.record_to_events(_REC, "ods_openagenda:t", _WIN)
+    assert [e.start.astimezone(PARIS).strftime("%d/%m %H:%M") for e in evs] == ["29/10 11:00", "31/10 11:00"]   # pas le 30, pas 2020
+    e = evs[0]
+    assert (e.source_id, e.venue, e.lat, e.price_type, e.url) == ("96691677", "Galerie Livinec", 48.872728, "free", "https://openagenda.com/x/events/y")
+    assert e.category == "expo"
+
+
+@pytest.mark.parametrize("cond,attendu", [
+    ("Entrée libre", "free"), ("Gratuit", "free"), ("10 € plein tarif", "paid"), ("Billetterie en ligne", "paid"),
+    ("Gratuit pour les moins de 12 ans, 10 € sinon", "unknown"), (None, "unknown"), ("Sur inscription", "unknown")])
+def test_ods_le_prix_n_est_deduit_que_si_la_source_est_sans_ambiguite(cond, attendu):
+    import sources_ods
+    assert sources_ods._price_type(cond) == attendu
+
+
+def test_ods_enregistrements_inexploitables_ignores_sans_planter():
+    import sources_ods
+    for rec in ({}, {**_REC, "uid": None}, {**_REC, "title_fr": " "}, {**_REC, "location_coordinates": {}},
+                {**_REC, "timings": "pas du json"}, {**_REC, "timings": None}):
+        assert sources_ods.record_to_events(rec, "s", _WIN) == []
+
+
+def test_ods_plafond_de_creneaux_par_evenement():
+    import sources_ods
+    rec = {**_REC, "timings": json.dumps([{"begin": f"2026-11-{d:02d}T10:00:00+01:00"} for d in range(1, 29)] * 4)}
+    assert len(sources_ods.record_to_events(rec, "s", _WIN)) == sources_ods.MAX_SLOTS_PER_EVENT
+
+
+def test_ods_pagination_et_pannes_non_masquees():
+    import httpx
+    import sources_ods
+    pages = {0: [{**_REC, "uid": str(i)} for i in range(100)], 100: [{**_REC, "uid": "last"}]}
+
+    def make(handler):
+        async def go():
+            c = sources.PoliteClient(min_interval=0, public_only=False)
+            c._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=False)
+            async with c:
+                return await sources_ods.fetch(c, {}, "ods_openagenda:t")
+        return go
+
+    def ok(req):
+        off = int(req.url.params["offset"])
+        return httpx.Response(200, json={"total_count": 101, "results": pages.get(off, [])})
+
+    # fenêtre d'ingestion = maintenant → on déplace les créneaux de la fixture dans le futur proche
+    import copy
+    fut = (datetime.now(UTC) + timedelta(days=3)).isoformat()
+    for lst in pages.values():
+        for r in lst:
+            r["timings"] = json.dumps([{"begin": fut, "end": None}])
+    evs = asyncio.run(make(ok)())
+    assert len(evs) == 101 and len({e.source_id for e in evs}) == 101
+
+    with pytest.raises(ValueError):                                      # filtre cassé = 0 enregistrement
+        asyncio.run(make(lambda req: httpx.Response(200, json={"total_count": 0, "results": []}))())
+    with pytest.raises(ValueError):                                      # champ « timings » renommé
+        asyncio.run(make(lambda req: httpx.Response(200, json={"total_count": 1, "results": [{**_REC, "timings": None}]}))())
+    with pytest.raises(httpx.HTTPStatusError):                           # API en erreur = source en erreur
+        asyncio.run(make(lambda req: httpx.Response(500))())
+
+
+def test_la_source_openagenda_est_declaree_sous_licence_ouverte():
+    s = {x.id: x for x in registry.load()}["openagenda-idf"]
+    assert (s.kind, s.city_id, s.authorization, s.priority) == ("ods_openagenda", "paris", "ok", 4)
+    assert "Licence Ouverte" in s.attribution and s.runnable()
