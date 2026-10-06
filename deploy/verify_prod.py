@@ -43,12 +43,17 @@ def check(name, ok, detail=""):
     print(("OK   " if ok else "FAIL ") + name + (f" — {detail}" if detail else ""))
 
 # --- /health : disponibilité, latence, refresh, flags -------------------------------------------------
-lat = []
+lat, codes = [], []
 for _ in range(12):
     st, dt, body, _h = req("/health")
     lat.append(dt)
+    codes.append(st)
     time.sleep(0.4)
-check("/health répond 200 sur 12 sondes", all(x < 3 for x in lat), f"max {max(lat)} s, médiane {statistics.median(lat)} s")
+# Médiane < 3 s ET aucune sonde > 10 s : on tolère une sonde lente isolée (observée 5 à 7 s dans les deux
+# minutes qui suivent un redémarrage, 0,9 s au repos — docs/performance.md) mais pas un gel (45 s constatés
+# avant la correction de `_persist`). Toute réponse autre que 200 échoue.
+check("/health répond 200 sur 12 sondes", all(c == 200 for c in codes) and statistics.median(lat) < 3 and max(lat) < 10,
+      f"codes {sorted(set(codes), key=str)}, max {max(lat)} s, médiane {statistics.median(lat)} s")
 h = json.loads(req("/health")[2])
 c = h["cities"]["paris"]
 now = datetime.now(timezone.utc)
