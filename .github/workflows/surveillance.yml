@@ -20,6 +20,11 @@ on:
   schedule:
     - cron: "17 */2 * * *"
   workflow_dispatch:
+    inputs:
+      simuler_alerte:
+        description: "TEST du suivi (issue ouverte puis fermée) : fait comme si /health?strict=1 répondait 503"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
