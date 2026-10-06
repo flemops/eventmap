@@ -283,3 +283,17 @@ le connecteur (`sources_ods.py`) en lit 1 212 (le reste est hors fenêtre d'inge
 (`timings` : une série n'est jamais étalée sur sa plage), en 17 s. Dédoublonnage inter-sources : 385 forts + 249 faibles
 sur la base réelle de test (QFAP et FICEP gagnent sur leur priorité). Prix : « gratuit » seulement si la source le
 dit sans ambiguïté, sinon inconnu. Coupure : `EVENTMAP_SOURCES_DISABLED=openagenda-idf`.
+
+## 9. Audits culturels du 06/10/2026 (phase 2.3) — Taïwan, Brésil, Argentine, Arabie saoudite
+
+Méthode reproductible : requête directe du jeu Opendatasoft `evenements-publics-openagenda` (source active `openagenda-idf`, événements à venir, recherche plein texte sur `location_name` / `location_address`), plus `/api/events?lat=…&lon=…&radius=1&when=week` autour de chaque adresse sur le service réel. Règle du modèle : la culture est un attribut d'un **lieu dédié** ; jamais déduite du titre ou de l'organisateur.
+
+| Pays | Constat | Décision |
+| --- | --- | --- |
+| Taïwan | 0 événement à venir dont le lieu est le Centre culturel de Taïwan (78 rue de l'Université) ; 0 événement dans un rayon de 1 km sous ce nom. Les 2 événements « Taïwan » sont hors les murs (Festival Lumière à Lyon, INALCO Paris 13e), non attribuables à un lieu dédié. | **Écarté** — `non classifiable par le modèle lieu`. Pas de `taiwan` dans `cultures.yaml`. Rouvrir si le lieu apparaît dans une source. |
+| Brésil | Maison du Brésil (7L bd Jourdan) : 3 événements dans le jeu OpenAgenda, tous **passés** (2017, 2017, 17/10/2025) ; 0 à venir, 0 dans QFAP/FICEP. Site officiel `maisondubresil.org` : WordPress/Avada, aucun JSON-LD Event, aucun flux ICS, pas de sitemap ; `maisondubresil.fr` est un domaine parqué en vente. | **Écarté** — aucune donnée actuelle ni source structurée. Pas de `bresil`. |
+| Argentine | Aucun lieu « Maison de l'Argentine / Casa Argentina » dans les sources actives (seul « Bienalsur Argentine », Buenos Aires, 2027). `casaargentina.org` est la **Casa Argentina de Houston** (flux iCal `/eventos/?ical=1`), pas celle de Paris ; aucun agenda de la Casa Argentina parisienne trouvé. | **Écarté** — le flux trouvé n'est pas celui du lieu parisien. Pas de `argentine`. Maison de l'Amérique latine non utilisée (multi-pays). |
+| Arabie saoudite (Paris) | Bureau culturel saoudien (26 rue Murillo) : 0 occurrence (lieu, adresse « Murillo », « saoudien ») dans le jeu OpenAgenda ; aucune programmation publique structurée trouvée. | **Écarté** — `pas de mapping Paris`. `monde-arabe` non utilisé comme proxy. Jeddah reste en PHASE 13. |
+| Amérique du Sud (extension) | Condition « lieu mono-pays + événements actuels + source autorisée » non remplie pour aucun autre pays ; aucune catégorie générique créée. | **Clos**, rien à ajouter. |
+
+Limite : la base de production n'a pas pu être interrogée directement (pas d'accès SSH depuis ce poste) ; la source active OpenAgenda et l'API publique du service réel ont servi de preuve.
