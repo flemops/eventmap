@@ -64,9 +64,12 @@ faux échecs) ; il se lance avant de toucher `db.search` ou le schéma.
 
 ## Observation en production (06/10/2026, après un redémarrage)
 
-Pendant le premier cycle de refresh qui suit un redémarrage du service, une sonde `/health` a mesuré
-**6,64 s** (une sonde sur douze ; médiane 0,6 s), contre un maximum de 0,91 s au repos (mesures de
-`deploy/verify_prod.py` depuis un runner GitHub). L'écriture et la déduplication tournent dans un fil
-(`main._persist`), donc l'API ne gèle plus, mais ce travail CPU reste en concurrence avec les requêtes (GIL).
-`post-deploy.yml` attend donc la fin du cycle avant de vérifier. Piste si cela gêne un jour : ne dédupliquer que
-les lignes nouvelles ou modifiées (voir `docs/scaling.md`), ou isoler le refresh dans son propre processus.
+Deux fois de suite, dans les deux minutes qui suivent un redémarrage du service (déploiement), une sonde
+`/health` sur douze a été lente : **6,64 s** puis **5,07 s** (médiane 0,5 à 0,6 s), contre un maximum de 0,91 s
+au repos (`deploy/verify_prod.py` depuis un runner GitHub). Dans le second cas `refresh.running` valait déjà
+`false` : ce n'est donc pas seulement le travail de déduplication du refresh (qui tourne dans un fil,
+`main._persist`, et se dispute le GIL avec l'API) ; un démarrage à froid (caches SQLite et configuration)
+y contribue probablement. **Cause non isolée** (pas d'accès SSH pour profiler sur la VM).
+`verify_prod.py` tolère donc une sonde isolée sous 10 s (médiane < 3 s) mais échoue sur un vrai gel.
+Piste si cela gêne un jour : préchauffer le service au démarrage (une requête interne) et/ou ne dédupliquer que
+les lignes nouvelles ou modifiées (voir `docs/scaling.md`).
