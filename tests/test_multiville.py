@@ -944,3 +944,21 @@ def test_une_ville_eteinte_ou_une_source_non_autorisee_ne_sonne_pas(base_temp, m
     monkeypatch.setenv("EVENTMAP_CITIES_ENABLED", "jeddah")      # allumee mais sans source autorisee
     assert not [a for a in main.compute_alerts(con, now) if a["city"] == "jeddah"]
     con.close()
+
+
+def test_ville_eteinte_rend_une_404_lisible_pas_du_json_brut(client):
+    r = client.get("/jeddah")
+    assert r.status_code == 404 and "text/html" in r.headers["content-type"]
+    assert "Page not found" in r.text and 'href="/paris"' in r.text and "noindex" in r.text
+    assert "jeddah" not in r.text.lower()                  # une ville éteinte n'est pas annoncée
+    assert client.head("/jeddah").status_code == 404
+
+
+def test_le_lieu_s_affiche_dans_la_langue_de_l_interface(client, base_temp, jeddah_on):
+    now = datetime.now(UTC) + timedelta(hours=2)
+    ev = _jed("Jazz", now, venue="Jeddah Yacht Club", lat=21.6529588, lon=39.1015469)
+    ev.venue_id = "jeddah-yacht-club"
+    _put(base_temp, [ev])
+    par_langue = {lg: client.get("/api/events", params={"city": "jeddah", "radius": 30, "when": "week", "lang": lg}).json()["events"][0]["venue"]
+                  for lg in ("en", "ar")}
+    assert par_langue == {"en": "Jeddah Yacht Club", "ar": "نادي جدة لليخوت"}

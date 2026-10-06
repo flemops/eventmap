@@ -26,6 +26,7 @@ _FR = {
     "gate_h1": "Où sortez-vous ?",
     "soon": "D'autres villes bientôt",
     "sources": "Sources", "maps": "Cartes",
+    "nf_title": "Page introuvable", "nf_msg": "Cette page ou cette ville n'est pas disponible. Choisissez une ville :",
 }
 
 _EN = {
@@ -44,6 +45,7 @@ _EN = {
     "gate_h1": "Where are you going out?",
     "soon": "More cities coming soon",
     "sources": "Sources", "maps": "Maps",
+    "nf_title": "Page not found", "nf_msg": "This page or city isn't available. Pick a city:",
 }
 
 _AR = {
@@ -62,6 +64,7 @@ _AR = {
     "gate_h1": "أين تريد الخروج؟",
     "soon": "مدن أخرى قريبًا",
     "sources": "المصادر", "maps": "الخرائط",
+    "nf_title": "الصفحة غير موجودة", "nf_msg": "هذه الصفحة أو المدينة غير متاحة. اختر مدينة:",
 }
 
 _ALL = {"fr": _FR, "en": _EN, "ar": _AR}
