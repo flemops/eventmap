@@ -16,7 +16,7 @@ body.carte-page {
 .bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .brand { font-weight: 800; letter-spacing: -.01em; color: var(--text); text-decoration: none; }
 .brand::before { content: "●"; color: var(--accent); margin-inline-end: 6px; }
-.switchers { display: flex; align-items: center; gap: 8px; }
+.switchers { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .langs { display: flex; gap: 4px; }
 .langs a { padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); color: var(--muted);
            text-decoration: none; font-size: 13px; }

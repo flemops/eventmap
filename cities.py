@@ -51,6 +51,7 @@ class City:
     sources: tuple
     category_groups: dict
     enabled_in_file: bool
+    teaser: bool = False   # ville éteinte annoncée « Coming soon » dans le sélecteur (aucune donnée, aucune API)
 
     @property
     def tz(self) -> ZoneInfo:
@@ -128,7 +129,7 @@ def _parse(raw: dict) -> dict[str, City]:
             stale_after_hours=int(c.get("stale_after_hours", 48)),
             sources=tuple(c.get("sources") or ()),
             category_groups={k: tuple(v) for k, v in (c.get("category_groups") or {}).items()},
-            enabled_in_file=bool(c.get("enabled", False)),
+            enabled_in_file=bool(c.get("enabled", False)), teaser=bool(c.get("teaser", False)),
         )
         ZoneInfo(c["timezone"])   # échoue tôt si le fuseau est inconnu
     if DEFAULT_CITY not in out:

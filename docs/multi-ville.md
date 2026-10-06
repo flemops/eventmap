@@ -178,3 +178,13 @@ production, et Jeddah est prête, éteinte, sans donnée factice. Critères du p
 Ce n'est pas un échec d'ingénierie : afficher des données non autorisées, ou une carte vide présentée comme
 « rien ce soir », serait pire que ne pas ouvrir. Le GO devient possible dès qu'**une** source autorisée existe :
 `authorization: ok` + connecteur + `EVENTMAP_CITIES_ENABLED=jeddah`, puis relancer `deploy/verify_prod.py`.
+
+## Sélecteur de ville public (Jeddah « Coming soon »)
+
+`/`, `/paris` et `/paris/carte` affichent un sélecteur rendu côté serveur (`render.city_switch_html`) :
+**Paris — Live** (lien) et **Jeddah — Coming soon** (bouton `aria-disabled`, focusable ; un clic ou
+Entrée affiche « Jeddah is technically ready. Event data will go live once a reusable source is
+available. », Échap le referme). Le drapeau `teaser: true` de `cities.yaml` ne fait QUE cela : Jeddah
+n'a toujours ni route, ni API, ni donnée (`enabled: false`, `sources: []`). Le jour où elle est
+allumée (`enabled` ou `EVENTMAP_CITIES_ENABLED`), le même sélecteur en fait un lien « Live » sans
+autre changement. Tests : `tests/test_city_switcher.py`.

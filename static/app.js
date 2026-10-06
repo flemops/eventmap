@@ -22,7 +22,6 @@
   document.querySelectorAll("#when [data-when]").forEach((b) => { b.textContent = t(b.dataset.when); });
   $("#geo").textContent = t("near_me");
   $("#free").textContent = t("free");
-  $("#lbl-city").textContent = t("city");
   $("#sheet").setAttribute("aria-label", t("list"));
   $("#list-title").textContent = t("list");
   $("#map").setAttribute("aria-label", t("map"));
@@ -328,14 +327,8 @@
     moveTimer = setTimeout(() => { const c = map.getCenter(); state.lat = c.lat; state.lon = c.lng; load(false); }, 500);
   });
 
-  /* ---- villes : sélecteur, langue, suggestion ---------------------------------------- */
+  /* ---- villes : langue, suggestion ---------------------------------------- */
   const pathFor = (cityId, lang, def, suffix) => `${lang && lang !== def ? "/" + lang : ""}/${cityId}${suffix}`;
-  function carry() {
-    const q = new URLSearchParams();
-    if (state.when !== "today") q.set("when", state.when);
-    q.set("price", state.free ? "free" : "all");
-    return "?" + q.toString();
-  }
   let CITIES = [];
   function suggestCity(here) {
     const box = $("#suggest");
@@ -347,18 +340,9 @@
     box.innerHTML = `${esc(t("suggest_city", { city: name }))} <a class="chip" href="${esc(pathFor(c.id, lang, c.default_language, "/carte"))}">${esc(t("yes_go", { city: name }))}</a> <button class="chip" type="button">${esc(t("dismiss"))}</button>`;
     box.querySelector("button").addEventListener("click", () => { box.hidden = true; });
   }
-  fetch("/api/cities").then((r) => r.json()).then(({ cities }) => {
-    CITIES = cities;
-    const sel = $("#city-select");
-    sel.innerHTML = cities.map((c) => `<option value="${esc(c.id)}"${c.id === CITY.id ? " selected" : ""}>${esc(c.names[LANG] || c.names.en || c.id)}</option>`).join("");
-    sel.addEventListener("change", () => {
-      const c = cities.find((x) => x.id === sel.value); if (!c) return;
-      try { localStorage.setItem("em_city", c.id); } catch { /* navigation privée */ }
-      const lang = c.languages.includes(LANG) ? LANG : c.default_language;
-      location.href = pathFor(c.id, lang, c.default_language, "/carte") + carry();
-    });
-    if (cities.length < 2) sel.closest(".sw").hidden = true;
-  }).catch(() => { $("#city-select").closest(".sw").hidden = true; });
+  /* Le sélecteur de ville est rendu par le serveur (render.city_switch_html) ; ici on ne garde
+     que la liste des villes allumées, pour la suggestion « vous semblez être à… ». */
+  fetch("/api/cities").then((r) => r.json()).then(({ cities }) => { CITIES = cities; }).catch(() => {});
 
   try { localStorage.setItem("em_city", CITY.id); localStorage.setItem("em_lang", LANG); } catch { /* ignoré */ }
   const langs = $("#lang-links");
