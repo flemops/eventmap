@@ -28,7 +28,7 @@ def test_le_selecteur_montre_paris_live_et_jeddah_coming_soon(client, path):
     assert 'class="cityswitch"' in html
     assert 'aria-current="page">Paris <span class="cs-badge live">En ligne</span>' in html
     assert "Jeddah" in html and "Bientôt" in html and "Coming soon" not in html
-    assert "est techniquement prête" in html
+    assert "Jeddah arrive bientôt" in html and "couverture locale fiable" in html
     assert "cityswitch.js" in html
 
 
@@ -49,7 +49,7 @@ def test_aucun_evenement_ni_donnee_jeddah_dans_les_pages(client):
     for path in ("/", "/paris/carte"):
         html = client.get(path).text
         # Les seules occurrences de « Jeddah » : le bouton, l'id du message et le message lui-même.
-        reste = html.replace("cs-msg-jeddah", "").replace("Jeddah est techniquement prête", "")                     .replace('Jeddah <span class="cs-badge">Bientôt', "")
+        reste = html.replace("cs-msg-jeddah", "").replace("Jeddah arrive bientôt", "")                     .replace('Jeddah <span class="cs-badge">Bientôt', "")
         assert "jeddah" not in reste.lower(), path
         assert "fixture" not in html.lower()
     assert client.get("/health").json()["cities"]["jeddah"]["enabled"] is False
@@ -58,11 +58,12 @@ def test_aucun_evenement_ni_donnee_jeddah_dans_les_pages(client):
 def test_les_trois_langues_ont_le_texte():
     j = cities.get("jeddah")
     p = cities.get("paris")
-    for lang, needle in (("fr", "techniquement prête"), ("en", "Event data will go live once a reusable source is available."),
-                         ("ar", "جاهزة تقنيًا")):
+    for lang, needle in (("fr", "Jeddah arrive bientôt"), ("en", "Jeddah is coming soon"),
+                         ("ar", "جدة قريبًا")):
         html = render.city_switch_html(p, lang)
         assert needle in html and j.name(lang) in html
     assert "Coming soon" in render.city_switch_html(p, "en")
+    assert "We&#x27;re working on reliable local event coverage." in render.city_switch_html(p, "en")
 
 
 def test_une_ville_sans_teaser_ou_allumee_change_le_rendu(monkeypatch):
@@ -76,3 +77,13 @@ def test_une_ville_sans_teaser_ou_allumee_change_le_rendu(monkeypatch):
     import dataclasses
     monkeypatch.setitem(cities.load(), "jeddah", dataclasses.replace(cities.get("jeddah"), teaser=False))
     assert render.city_switch_html(p, "fr") == ""
+
+
+def test_la_carte_expose_le_panneau_filtres_et_un_selecteur_details(client):
+    html = client.get("/paris/carte").text
+    assert 'id="filters-panel"' in html and 'role="dialog"' in html
+    assert '<details class="cs">' in html and "<summary>Paris" in html
+    assert 'data-when="today"' in html and 'data-when="weekend"' in html and 'id="free"' in html
+    assert "cityswitch.js" in html and "app.js" in html
+    # Le Jeddah « bientôt » reste du texte : aucun lien, aucune route.
+    assert 'href="/jeddah' not in html

@@ -692,7 +692,7 @@ def test_pages_de_jeddah_langues_et_sens(client, jeddah_on):
 
 def test_choix_de_ville_quand_il_y_en_a_deux(client, jeddah_on):
     html = client.get("/").text
-    assert "Where are you going out?" in html and 'href="/paris"' in html and 'href="/jeddah"' in html
+    assert "Find something worth doing tonight." in html and 'href="/paris"' in html and 'href="/jeddah"' in html
     assert "More cities coming soon" in html
     assert 'rel="canonical" href="https://eventmap.hamdy-tabsissi.com/"' in html
     sm = client.get("/sitemap.xml").text

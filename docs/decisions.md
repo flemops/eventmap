@@ -325,6 +325,27 @@ le piège du 02/09 (page cassée sans erreur console visible, curl pourtant OK).
 
 ---
 
+## D18 — Refonte UX de la carte (06/10/2026) : hiérarchie ville → ce soir → sélection → carte + liste
+
+**Décision.** L'en-tête ne montre plus que : marque, ville (`Paris ▾`, un `<details>` rendu serveur),
+titre, et `Tonight · Weekend · Free · Filters`. Tomorrow, 7 jours, catégorie, distance vivent dans
+le panneau Filtres (feuille du bas sur mobile, popover sur ordinateur). Jetons de design uniques
+(`--sp-*`, `--r-*`, `--fs-*`, `--sh-*`) dans `common.css`.
+
+**« Top picks tonight »** : classement déterministe côté client (`pickScore` dans `app.js`), sans score
+affiché : événement actif, à jour, localisé, avec lieu + description + lien officiel valide, prix connu,
+qui commence dans les 90 min passées ou plus tard ; proximité seulement si l'utilisateur s'est
+géolocalisé. La section n'apparaît que si la liste compte ≥ 6 événements ET ≥ 3 sont assez complets
+(seuil 4 points) : sinon, pas de faux classement.
+
+**La carte ne relance plus la recherche toute seule.** Un déplacement net (> ⅓ du rayon) propose
+« Search this area » ; avant, chaque pan rechargeait au bout de 500 ms et refermait la fiche.
+
+**Favoris** : `localStorage` (`em_saved_<ville>`, identifiants seuls), vue « Saved » rechargée via
+`/api/events/{id}` ; les événements passés ou disparus sont oubliés. Aucun compte.
+
+---
+
 ## Backlog — hors périmètre, consigné pour ne pas l'oublier
 
 - **Élargissement hors Paris** : voir D13 et `docs/sources.md` § sondage

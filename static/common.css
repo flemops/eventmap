@@ -1,27 +1,51 @@
 /* EventMap — styles partagés entre / (accueil.html) et /carte (index.html).
    Toute règle ici doit rester identique dans les deux pages : ne pas diverger. */
+
+/* ---- jetons de design ------------------------------------------------------------------
+   Une seule échelle pour tout : espacements, rayons, ombres, tailles de texte. Une valeur
+   qui n'est pas dans l'échelle est un défaut, pas un choix.
+   Couleurs (sobriété) : surfaces neutres ; ROSE = action et sélection ; VERT = gratuit ;
+   ORANGE = payant, seulement là où il informe. */
 :root {
   --bg: #12131f; --panel: #1b1d2e; --chip-bg: #20223a; --line: #2b2e45; --text: #eef0fa; --muted: #8b8fae;
   --accent: #ef3d6e; --accent-glow: rgba(239,61,110,.35); --free: #4fd694; --paid: #f0a93c;
   --accent-bg: #d1215a;   /* fond de bouton : texte blanc dessus = 5,15:1 (l'accent seul donne 3,78:1) */
-  --radius: 12px; --safe-b: env(safe-area-inset-bottom, 0px);
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --scrim: rgba(8,9,16,.55);
+
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
+  --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-pill: 999px; --radius: var(--r-md);
+  --fs-xs: 12px; --fs-sm: 13px; --fs-md: 15px; --fs-lg: 17px; --fs-xl: 22px; --fs-2xl: 28px;
+  --sh-1: 0 1px 2px rgba(0,0,0,.25); --sh-2: 0 8px 24px rgba(0,0,0,.35); --sh-up: 0 -6px 24px rgba(0,0,0,.28);
+  --dur: .15s; --ease: cubic-bezier(.2,.7,.2,1);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Arabic", "Segoe UI Historic", Tahoma, Roboto, sans-serif;
+  --safe-b: env(safe-area-inset-bottom, 0px);
 }
 @media (prefers-color-scheme: light) {
   :root {
     --bg: #f7f4ee; --panel: #fff; --chip-bg: #f0ece1; --line: #e6e0d2; --text: #1c1b22; --muted: #6b6577;
     --accent: #c81155; --accent-glow: rgba(200,17,85,.2); --free: #17734d; --paid: #a8650f; --accent-bg: #c81155;
+    --scrim: rgba(28,27,34,.35);
+    --sh-1: 0 1px 2px rgba(28,27,34,.1); --sh-2: 0 8px 24px rgba(28,27,34,.16); --sh-up: 0 -6px 24px rgba(28,27,34,.14);
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }   /* un display: grid/flex d'auteur ne doit jamais réafficher un élément masqué */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---- marque : la punaise du favicon + le nom ------------------------------------------- */
+.brand { display: inline-flex; align-items: center; gap: var(--sp-2); font-weight: 800; font-size: var(--fs-lg);
+         letter-spacing: -.02em; color: var(--text); text-decoration: none; }
+.brand svg { width: 18px; height: 24px; flex: none; fill: var(--accent); }
 
 .chip {
   flex: none; padding: 7px 13px; border-radius: 10px; border: 1px solid var(--line);
   background: var(--chip-bg); color: var(--text); font: inherit; font-size: 14px; cursor: pointer;
-  white-space: nowrap; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+  white-space: nowrap; transition: background var(--dur) ease, border-color var(--dur) ease, box-shadow var(--dur) ease;
 }
 .chip[aria-pressed="true"] { background: var(--accent-bg); border-color: var(--accent-bg); color: #fff; box-shadow: 0 0 0 4px var(--accent-glow); }
 
@@ -41,18 +65,48 @@
 
 footer a { color: inherit; }
 
-/* ---- sélecteur de ville (rendu serveur, render.city_switch_html) ------------------------------ */
-.cityswitch ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.cityswitch .cs-item {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 12px; font: inherit; font-size: 14px;
-  border: 1px solid var(--line); border-radius: 10px; background: var(--chip-bg); color: var(--text); text-decoration: none;
+/* ---- sélecteur de ville (rendu serveur, render.city_switch_html) ------------------------
+   Fermé : « Paris ▾ ». Ouvert : la liste des villes (Paris « Live », Jeddah « Coming soon »).
+   Un <details> : fonctionne sans JavaScript, clavier compris. */
+.cityswitch { position: relative; }
+.cityswitch summary {
+  list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 36px;
+  padding: 4px 12px; border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--chip-bg);
+  color: var(--text); font-weight: 650; font-size: var(--fs-md); transition: border-color var(--dur) ease;
 }
-.cityswitch a.cs-item[aria-current="page"] { border-color: var(--accent); }
-.cityswitch a.cs-item:hover { border-color: var(--accent); }
-.cityswitch .cs-soon { cursor: pointer; color: var(--muted); border-style: dashed; }
-.cityswitch .cs-soon[aria-expanded="true"] { border-color: var(--muted); color: var(--text); }
-.cs-badge { font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 1px 7px; border-radius: 999px;
-            border: 1px solid var(--line); color: var(--muted); }
+.cityswitch summary::-webkit-details-marker { display: none; }
+.cityswitch summary::after {
+  content: ""; width: 6px; height: 6px; margin-block-start: -3px; flex: none;
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg);   /* physique : un chevron ne se miroite pas */
+  transition: transform var(--dur) var(--ease);
+}
+.cityswitch .cs[open] summary { border-color: var(--accent); }
+.cityswitch .cs[open] summary::after { transform: rotate(225deg); margin-block-start: 3px; }
+.cs-pop {
+  position: absolute; inset-inline-start: 0; top: calc(100% + 6px); z-index: 1200; width: max-content;
+  min-width: 240px; max-width: min(320px, calc(100vw - 24px)); padding: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-2);
+}
+.cityswitch ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.cityswitch .cs-item {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); width: 100%; min-height: 44px;
+  padding: 6px 12px; font: inherit; font-size: var(--fs-md); text-align: start;
+  border: 0; border-radius: var(--r-md); background: transparent; color: var(--text); text-decoration: none;
+}
+.cityswitch a.cs-item:hover { background: var(--chip-bg); }
+.cityswitch a.cs-item[aria-current="page"] { background: var(--accent-soft); font-weight: 650; }
+.cityswitch .cs-soon { cursor: pointer; color: var(--muted); }
+.cityswitch .cs-soon:hover, .cityswitch .cs-soon[aria-expanded="true"] { background: var(--chip-bg); color: var(--text); }
+.cs-badge { font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 1px 7px; border-radius: var(--r-pill);
+            border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
 .cs-badge.live { color: var(--free); border-color: color-mix(in srgb, var(--free) 55%, transparent); }
-.cs-msg { margin: 6px 0 0; font-size: 13px; line-height: 1.4; color: var(--muted); max-width: 46ch; }
+.cs-msg { margin: 6px 6px 4px; padding: var(--sp-3); border-radius: var(--r-md); background: var(--chip-bg); font-size: var(--fs-sm);
+          line-height: 1.4; color: var(--muted); display: grid; gap: 2px; }
+.cs-msg strong { color: var(--text); font-size: var(--fs-md); }
 .cs-msg[hidden] { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .cs[open] .cs-pop { animation: pop-in .14s var(--ease); }
+  .cs-msg:not([hidden]) { animation: pop-in .14s var(--ease); }
+  @keyframes pop-in { from { opacity: 0; transform: translateY(-4px); } }
+}
+@media (pointer: coarse) { .cityswitch summary { min-height: 44px; } }
