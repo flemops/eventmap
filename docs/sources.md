@@ -1,11 +1,13 @@
 # Sources de données
 
-> **Périmètre depuis le 23/08/2026 : Paris intra-muros, source unique = Que
-> faire à Paris** (décision D13). Le connecteur filtre `address_city="Paris"`
-> côté API : 2534 events à venir au moment du recentrage. Les sections 2 à 5
-> décrivent des connecteurs écrits et testés mais **inactifs** ; la section
-> « Sondage banlieue » archive ce qui a été constaté sur les domaines du brief
-> initial, pour ne pas refaire le travail si le périmètre s'élargit.
+> **Mise à jour 06/10/2026 — la liste des sources actives vit dans `feeds.yaml` (champ `enabled` +
+> `authorization: ok`) et dans `GET /health` (`cities.<ville>.sources`), jamais dans ce document.** Que faire à
+> Paris (QFAP) reste la source de base ; d'autres sources y ont été ajoutées depuis (flux ICS FICEP,
+> programmation d'une salle par JSON-LD, jeu OpenAgenda via Opendatasoft), chacune avec sa licence et sa
+> décision d'autorisation. Les sections ci-dessous décrivent chaque connecteur ; celles marquées « inactif »
+> sont écrites et testées mais non branchées ; « Sondage banlieue » archive ce qui a été constaté sur les
+> domaines du brief initial (décision D13), pour ne pas refaire le travail si le périmètre s'élargit.
+> Les volumes cités plus bas sont des mesures **datées** de leur section, pas l'état courant.
 
 Ce document fait foi pour chaque source branchée dans l'agrégateur : ce qui a
 été **vérifié concrètement** (et quand), sous quelle licence, avec quelles

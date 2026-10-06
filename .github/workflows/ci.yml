@@ -6,6 +6,8 @@ name: CI (quality gate)
 
 on:
   pull_request:
+  push:
+    branches: [master]     # alimente le badge du README
   workflow_dispatch:
 
 permissions:

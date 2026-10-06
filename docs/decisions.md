@@ -385,7 +385,7 @@ technologie « pour faire moderne ».
 * **Pas de `src/eventmap/` ni de découpage de `main.py`.** Mesuré (complexité cyclomatique, seuil 12) :
   une seule fonction très complexe (`sources.dedup_inter_source`, 28), pure et très testée ; `main.py` est
   organisé en sections claires, et ses fonctions d'état (`_refresh_state`, `compute_alerts`, `_data_state`)
-  sont couplées par ~50 tests qui s'appuient sur `main.*`. Déplacer du code coûterait plus qu'il ne rapporterait.
+  sont référencées une cinquantaine de fois par les tests (`main.*`). Déplacer du code coûterait plus qu'il ne rapporterait.
   Critère de réouverture : un second point d'entrée (CLI, worker) qui doit réutiliser le refresh sans importer FastAPI.
 * **SQLite conservé** : mesures et seuils dans `docs/performance.md` et `docs/scaling.md`.
 * **Dépendances** : les six dépendances d'exécution sont toutes importées (vérifié) ; `uvicorn[standard]`
