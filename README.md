@@ -100,6 +100,19 @@ GitHub Actions.** No build step, no front-end framework, no external service to 
 * **Additive migrations**: an older release keeps working on a migrated database, so a rollback is safe
   (`test_un_ancien_code_continue_d_ecrire_dans_une_base_migree`).
 
+## Tests, CI/CD and monitoring
+
+* **Tests** (offline, `pytest`): risk-based map in [`docs/tests.md`](docs/tests.md) — connector contracts on real
+  upstream records, migrations (including *old code on a migrated database*), invariants (city isolation, no visible
+  duplicate, last-known-good, no naive dates), health and alerts. Coverage is measured; the CI enforces a floor.
+* **CI on every PR** ([`ci.yml`](.github/workflows/ci.yml)): Ruff, tests + coverage, Python 3.10 / 3.12 / 3.13, `pip-audit` +
+  SBOM, gitleaks. **On `master`** ([`prod-tag.yml`](.github/workflows/prod-tag.yml)): the same checks on the production
+  Python, a "production dependencies alone are enough" check, then the `prod` tag moves and the VM pulls it.
+* **Post-deploy verification** ([`post-deploy.yml`](.github/workflows/post-deploy.yml)): waits for the expected commit to be
+  live (`/health` → `release.commit`), then replays [`deploy/verify_prod.py`](deploy/verify_prod.py) read-only against production.
+* **Monitoring**: a scheduled workflow ([`surveillance.yml`](.github/workflows/surveillance.yml)) probes `/health` (availability)
+  and `/health?strict=1` (data) every two hours and opens / comments / closes a GitHub issue — one alert, one conversation.
+
 ## Security and privacy
 
 Only controls that exist in the repository:
