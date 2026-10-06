@@ -83,7 +83,9 @@ CREATE TABLE IF NOT EXISTS source_health (
     last_error    TEXT,
     error_streak  INTEGER NOT NULL DEFAULT 0,
     last_valid    INTEGER NOT NULL DEFAULT 0,   -- événements valides au dernier cycle
-    geo_missing   INTEGER NOT NULL DEFAULT 0    -- sans coordonnées au dernier cycle
+    geo_missing   INTEGER NOT NULL DEFAULT 0,   -- sans coordonnées au dernier cycle
+    quarantine_streak INTEGER NOT NULL DEFAULT 0, -- lots anormaux écartés de suite (14.6)
+    quarantine_reason TEXT
 );
 
 CREATE TABLE IF NOT EXISTS feeds (
@@ -209,7 +211,9 @@ def _migrate(con: sqlite3.Connection) -> None:
     for name, decl in {"city_id": "TEXT", "last_ok": "TEXT", "last_error": "TEXT",
                        "error_streak": "INTEGER NOT NULL DEFAULT 0",
                        "last_valid": "INTEGER NOT NULL DEFAULT 0",
-                       "geo_missing": "INTEGER NOT NULL DEFAULT 0"}.items():
+                       "geo_missing": "INTEGER NOT NULL DEFAULT 0",
+                       "quarantine_streak": "INTEGER NOT NULL DEFAULT 0",
+                       "quarantine_reason": "TEXT"}.items():
         if name not in hcols:
             con.execute(f"ALTER TABLE source_health ADD COLUMN {name} {decl}")
 
@@ -459,11 +463,54 @@ def record_source_health(con: sqlite3.Connection, source: str, count: int,
             last_error    = NULL,
             error_streak  = 0,
             last_valid    = :valid,
-            geo_missing   = :geo
+            geo_missing   = :geo,
+            quarantine_streak = 0,
+            quarantine_reason = NULL
         """,
         {"s": source, "c": count, "t": iso, "city": city_id,
          "valid": count if valid is None else valid, "geo": geo_missing},
     )
+
+
+def source_previous(con: sqlite3.Connection, source: str) -> dict | None:
+    """Ce que la source avait rapporté au cycle précédent (pour juger le lot courant)."""
+    r = con.execute("SELECT last_valid, geo_missing, quarantine_streak FROM source_health WHERE source = ?",
+                    (source,)).fetchone()
+    return dict(r) if r else None
+
+
+def record_source_quarantine(con: sqlite3.Connection, source: str, reason: str, now: datetime,
+                             *, city_id: str | None = None) -> int:
+    """Un lot anormal a été ÉCARTÉ (ni écrit, ni purge) : on garde le dernier contenu sain et on le trace.
+    `last_ok` avance (la source répond) ; `last_valid`/`geo_missing` ne bougent PAS : la référence reste
+    le dernier lot sain. Renvoie la série en cours."""
+    iso = _iso(_to_utc(now))
+    con.execute(
+        """
+        INSERT INTO source_health (source, last_count, updated_at, city_id, last_ok, quarantine_streak, quarantine_reason)
+        VALUES (:s, 0, :t, :city, :t, 1, :r)
+        ON CONFLICT(source) DO UPDATE SET
+            updated_at = :t, last_ok = :t, city_id = COALESCE(:city, city_id),
+            quarantine_streak = quarantine_streak + 1, quarantine_reason = :r
+        """, {"s": source, "t": iso, "city": city_id, "r": reason[:300]})
+    return con.execute("SELECT quarantine_streak FROM source_health WHERE source = ?", (source,)).fetchone()[0]
+
+
+def integrity(con: sqlite3.Connection) -> str:
+    """« ok » ou le premier message de `PRAGMA quick_check` (14.8). Lecture seule, quelques ms."""
+    try:
+        return con.execute("PRAGMA quick_check(1)").fetchone()[0]
+    except sqlite3.DatabaseError as exc:      # base illisible : c'est exactement ce qu'on veut signaler
+        return f"illisible : {type(exc).__name__}"
+
+
+def backup_to(con: sqlite3.Connection, dest: str) -> None:
+    """Copie cohérente à chaud (API de sauvegarde SQLite, sûre sous WAL) — avant une migration destructive."""
+    out = sqlite3.connect(dest)
+    try:
+        con.backup(out)
+    finally:
+        out.close()
 
 
 def record_source_failure(con: sqlite3.Connection, source: str, error: str, now: datetime,
@@ -489,6 +536,7 @@ def source_report(con: sqlite3.Connection, city_id: str | None = None) -> list[d
     """État de chaque source, avec l'âge (en heures) de sa dernière donnée."""
     q = """
         SELECT source, city_id, last_count, last_valid, geo_missing, empty_streak,
+               quarantine_streak, quarantine_reason,
                error_streak, last_error, last_ok, last_nonempty,
                ROUND((julianday('now') - julianday(last_nonempty)) * 24, 1) AS data_age_h,
                ROUND((julianday('now') - julianday(last_ok)) * 24, 1)       AS ok_age_h

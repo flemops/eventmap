@@ -424,3 +424,18 @@ et en-têtes/CSP vérifiés sur le service réel par `deploy/verify_prod.py`.
   aucune IP, aucun identifiant, aucun cookie ; `GET /api/funnel` expose les totaux.
 * **Hors périmètre volontaire** : photos d'événements (aucune source n'en fournit avec droit d'affichage vérifié,
   15.24 — fallback sans image), estimation de trajet, comptes, personnalisation IA (15.54).
+
+## D22 — Phase 14 (partie sans VM) : quarantaine des lots anormaux et intégrité SQLite
+
+**Décision (07/10/2026).** Règles déterministes, sans LLM (14.2) :
+* **Quarantaine (14.6)** — un lot *réussi mais suspect* n'est ni écrit ni purgé ; le dernier contenu sain reste servi.
+  Suspect = volume < 30 % du cycle précédent (source d'au moins 20 événements) ou > 60 % sans coordonnées alors que le
+  cycle précédent était sain. **Après 3 lots écartés de suite, le suivant est accepté** : c'est la nouvelle normale
+  (une source qui a vraiment rétréci ne reste pas figée). Alerte `quarantine` à partir de 2 lots écartés (anti-bruit, 14.20).
+* **Intégrité (14.8)** — `PRAGMA quick_check` dans `/health` (alerte `db_integrity` si ≠ « ok ») ; `db.backup_to()` copie à
+  chaud (API de sauvegarde SQLite) à appeler avant une migration destructive. Les migrations actuelles restent additives.
+* Scénarios de panne testés (14.25/14.26) : timeout, source HTTP morte, 0 événement → dernier contenu conservé ; lot effondré →
+  quarantaine ; base verrouillée par un écrivain → la lecture continue (WAL) ; base corrompue → détectée.
+
+**Reste hors dépôt (accès VM requis)** : 14.0 (DNS), 14.3 (worker + timers systemd), 14.9 (watchdog), 14.10, 14.15–14.17
+(déploiement transactionnel côté VM), 14.28 (période d'observation).

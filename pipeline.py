@@ -30,6 +30,28 @@ _CANCELLED = re.compile(r"(^|\W)(cancel+ed|cancellation|annul[ée]e?|ملغ[يى
 _POSTPONED = re.compile(r"(^|\W)(postponed|reschedul\w*|report[ée]e?|مؤجل\w*|تأجيل)(\W|$)", re.I)
 
 STATUSES = ("active", "cancelled", "postponed", "expired", "stale")
+
+# Mise en quarantaine d'un lot anormal (14.6). Règles déterministes, sans LLM, volontairement larges :
+# elles ne doivent attraper qu'un parseur cassé ou une source qui dérape, pas une saison creuse.
+QUARANTINE_MIN_PREV = 20          # en dessous, la source est trop petite pour juger un « effondrement »
+QUARANTINE_DROP_RATIO = 0.3       # un lot à moins de 30 % du précédent
+QUARANTINE_GEO_RATIO = 0.6        # plus de 60 % sans coordonnées alors que le lot précédent allait bien (< 30 %)
+QUARANTINE_MAX_STREAK = 3         # après 3 lots écartés de suite, le suivant est accepté : c'est la nouvelle normale
+
+
+def batch_anomaly(prev_valid: int, prev_geo_missing: int, valid: int, geo_missing: int) -> str | None:
+    """Raison pour laquelle un lot est suspect, ou None s'il est normal.
+
+    Un lot vide n'est pas jugé ici (déjà traité : purge annulée, dernier contenu conservé). La
+    quarantaine ne supprime rien : le lot n'est simplement pas écrit, l'ancien contenu reste servi."""
+    if valid <= 0:
+        return None
+    if prev_valid >= QUARANTINE_MIN_PREV and valid < prev_valid * QUARANTINE_DROP_RATIO:
+        return f"volume : {valid} événements valides contre {prev_valid} au cycle précédent"
+    if valid >= 10 and geo_missing / valid > QUARANTINE_GEO_RATIO \
+            and (prev_valid < 10 or prev_geo_missing / prev_valid < 0.3):
+        return f"géocodage : {geo_missing}/{valid} sans coordonnées (cycle précédent : {prev_geo_missing}/{prev_valid})"
+    return None
 MAX_TITLE = 300
 MAX_DESC = 600
 
