@@ -269,3 +269,15 @@ L'en-tête d'une page affiche l'heure **UTC** (« 6 octobre 2026 – 17h00 ») a
 l'option `naive_utc_label` reste **fausse** pour cette source. J'avais d'abord cru le contraire en lisant seulement
 l'en-tête ; c'est le déroulé horaire qui a tranché. Toujours confronter le JSON-LD à une information indépendante
 de la page avant de « corriger » un fuseau.
+
+---
+
+## 8. OpenAgenda via Opendatasoft (phase 2.5, 06/10/2026)
+
+Jeu `evenements-publics-openagenda` (public.opendatasoft.com), **Licence Ouverte v1.0 (Etalab)** : réutilisation libre
+avec mention de la source (pied de page : « OpenAgenda — événements publics (Licence Ouverte v1.0) »). API Explore v2.1
+sans clé — alors que l'API d'OpenAgenda exige une clé (403). Mesuré le 06/10 : 1 356 événements parisiens à venir ;
+le connecteur (`sources_ods.py`) en lit 1 212 (le reste est hors fenêtre d'ingestion), soit 11 225 créneaux réels
+(`timings` : une série n'est jamais étalée sur sa plage), en 17 s. Dédoublonnage inter-sources : 385 forts + 249 faibles
+sur la base réelle de test (QFAP et FICEP gagnent sur leur priorité). Prix : « gratuit » seulement si la source le
+dit sans ambiguïté, sinon inconnu. Coupure : `EVENTMAP_SOURCES_DISABLED=openagenda-idf`.

@@ -163,3 +163,30 @@ feeds:
 #  - La Cigale : robots.txt Crawl-delay 3 et `Disallow: /*?` ; aucune page événement balisée Event.
 #  - Rond-Point, Odéon : aucun JSON-LD Event trouvé (pages d'archive / saison seulement).
 #  - Chaillot : site injoignable depuis ce poste le 06/10/2026.
+
+# --- OpenAgenda (phase 2.5) : voie propre via le jeu Opendatasoft « Public events - OpenAgenda » -------
+# L'API d'OpenAgenda exige une clé (403 sans). Ce jeu rediffuse les agendas publics en open data, sous
+# Licence Ouverte v1.0 (Etalab : réutilisation libre avec mention de la source), API Explore v2.1 sans clé.
+# 1 356 événements parisiens à venir le 06/10/2026, coordonnées + créneaux réels (`timings`).
+# Contient aussi FICEP : le dédoublonnage inter-sources ramène à un seul événement ceux que QFAP/FICEP publient.
+  - id: openagenda-idf
+    city: paris
+    type: ods_openagenda
+    url: "https://public.opendatasoft.com/explore/dataset/evenements-publics-openagenda/"
+    name: "OpenAgenda — événements publics (Paris)"
+    enabled: true
+    authorization: ok
+    priority: 4
+    refresh_hours: 12
+    timeout_s: 300
+    retries: 1
+    min_interval_s: 1.0
+    attribution: "OpenAgenda — événements publics (Licence Ouverte v1.0)"
+    home: "https://public.opendatasoft.com/explore/dataset/evenements-publics-openagenda/"
+    license: "Licence Ouverte v1.0 (Etalab)"
+    status: ok
+    checked: "2026-10-06"
+    options:
+      host: public.opendatasoft.com
+      dataset: evenements-publics-openagenda
+      where: 'location_city="Paris" AND lastdate_end >= now()'
