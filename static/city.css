@@ -135,9 +135,10 @@ main { flex: 1; position: relative; min-height: 260px; display: flex; flex-direc
 @media (min-width: 900px) {
   main { flex-direction: row; }
   #map { position: relative; inset: auto; flex: 1 1 auto; min-width: 0; }
-  /* Entre 400 et 520 px : le panneau gagne en confort sans reléguer la carte (à 1280, 486 px). */
-  .sheet { position: relative; inset: auto; height: auto !important; flex: 0 0 clamp(400px, 38vw, 520px); border-radius: 0;
-           border-width: 0; border-inline-start: 1px solid var(--line); box-shadow: none; }
+  /* Phase 15.11-15.12 : sur ordinateur la LISTE est l'interface principale (elle passe avant, à
+     l'inline-start) et la carte la soutient. Entre 440 et 720 px (à 1440 : 662 px, à 1280 : 589 px). */
+  .sheet { position: relative; inset: auto; height: auto !important; flex: 0 0 clamp(440px, 46vw, 720px); border-radius: 0; order: -1;
+           border-width: 0; border-inline-end: 1px solid var(--line); box-shadow: none; }
   .grab { display: none; }
   .panel { padding-top: var(--sp-3); }
   .status { padding-top: var(--sp-3); }
@@ -294,3 +295,19 @@ body.carte-page, body.gate { --accent-bg: #d1215a; --accent-fg: #ff7a9f; }
 .carte-page .chip[aria-pressed="true"], .btn.primary { background: var(--accent-bg); border-color: var(--accent-bg); }
 .detail .back, .city-card .go, .leaflet-popup-content a, body.gate article a:not(.btn), body.gate header a { color: var(--accent-fg); }
 .langs a[aria-current="true"] { border-color: var(--accent-fg); }
+
+/* ---- Phase 15 : recherche, date, plage horaire, My Evening ------------------------------------- */
+.inp { width: 100%; box-sizing: border-box; min-height: 44px; padding: 0 var(--sp-3); border-radius: var(--r-md); border: 1px solid var(--line);
+       background: var(--chip-bg); color: var(--text); font: inherit; color-scheme: light dark; }
+.inp:focus-visible { outline: 2px solid var(--accent-fg); outline-offset: 1px; }
+.fp-date { display: grid; gap: var(--sp-1); margin-top: var(--sp-2); font-size: var(--fs-sm); color: var(--muted); }
+.eve-note { margin: 0 0 var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+.timeline li { display: grid; gap: var(--sp-1); }
+.tl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding-inline: var(--sp-1); font-size: var(--fs-sm); color: var(--muted); }
+.tl-rm { margin-inline-start: auto; background: none; border: 0; color: var(--accent-fg); font: inherit; font-weight: 600; min-height: 36px; padding: 0 var(--sp-2); cursor: pointer; }
+.list .actions { grid-template-columns: 1fr; }
+.actions.second { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+#eve-btn { margin-inline-end: var(--sp-1); }
+#eve-btn[hidden] { display: none; }
+@media (max-width: 480px) { #eve-label { display: none; } }

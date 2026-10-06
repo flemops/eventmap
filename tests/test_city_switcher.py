@@ -26,9 +26,10 @@ def client(tmp_path, monkeypatch):
 def test_le_selecteur_montre_paris_live_et_jeddah_coming_soon(client, path):
     html = client.get(path).text
     assert 'class="cityswitch"' in html
-    assert 'aria-current="page">Paris <span class="cs-badge live">En ligne</span>' in html
-    assert "Jeddah" in html and "Bientôt" in html and "Coming soon" not in html
-    assert "Jeddah arrive bientôt" in html and "couverture locale fiable" in html
+    # Phase 15.4 : l'interface de Paris est en anglais par défaut (/fr/paris reste servi).
+    assert 'aria-current="page">Paris <span class="cs-badge live">Live</span>' in html
+    assert "Jeddah" in html and "Coming soon" in html and "Bientôt" not in html
+    assert "Jeddah is coming soon" in html and "reliable local event coverage" in html
     assert "cityswitch.js" in html
 
 
@@ -49,7 +50,8 @@ def test_aucun_evenement_ni_donnee_jeddah_dans_les_pages(client):
     for path in ("/", "/paris/carte"):
         html = client.get(path).text
         # Les seules occurrences de « Jeddah » : le bouton, l'id du message et le message lui-même.
-        reste = html.replace("cs-msg-jeddah", "").replace("Jeddah arrive bientôt", "")                     .replace('Jeddah <span class="cs-badge">Bientôt', "")
+        reste = (html.replace("cs-msg-jeddah", "").replace("Jeddah is coming soon", "")
+                 .replace('Jeddah <span class="cs-badge">Coming soon', ""))
         assert "jeddah" not in reste.lower(), path
         assert "fixture" not in html.lower()
     assert client.get("/health").json()["cities"]["jeddah"]["enabled"] is False

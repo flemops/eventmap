@@ -36,6 +36,7 @@
       %%CITY_SWITCH%%
     </div>
     <div class="switchers">
+      <button class="saved-btn" type="button" id="eve-btn" hidden><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 4.5V8l2.4 1.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span id="eve-label"></span><b id="eve-n"></b></button>
       <button class="saved-btn" type="button" id="saved-btn" hidden><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 13.6S2.2 10 2.2 6a3.2 3.2 0 015.8-1.9A3.2 3.2 0 0113.8 6c0 4-5.8 7.6-5.8 7.6z" fill="currentColor"/></svg><b id="saved-n"></b></button>
       <nav id="lang-links" class="langs" aria-label="Language"></nav>
     </div>
@@ -66,6 +67,7 @@
         %%SEO_EVENTS%%
       </div></div>
       <article id="detail" class="detail" hidden></article>
+      <article id="evening" class="detail" hidden></article>
     </div>
   </section>
 </main>
@@ -79,7 +81,10 @@
     <button class="fp-close" type="button" id="fp-close"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3.5 3.5l9 9m0-9l-9 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button>
   </div>
   <div class="fp-body">
-    <fieldset class="fp-group"><legend id="fp-l-when"></legend><div class="seg" id="fp-when" role="group" aria-labelledby="fp-l-when"></div></fieldset>
+    <fieldset class="fp-group"><legend id="fp-l-search"></legend><input class="inp" type="search" id="fp-search" autocomplete="off" maxlength="60"></fieldset>
+    <fieldset class="fp-group"><legend id="fp-l-when"></legend><div class="seg" id="fp-when" role="group" aria-labelledby="fp-l-when"></div>
+      <label class="fp-date"><span id="fp-l-date"></span><input class="inp" type="date" id="fp-date"></label></fieldset>
+    <fieldset class="fp-group"><legend id="fp-l-tod"></legend><div class="seg" id="fp-tod" role="group" aria-labelledby="fp-l-tod"></div></fieldset>
     <fieldset class="fp-group"><legend id="fp-l-price"></legend><div class="seg" id="fp-price" role="group" aria-labelledby="fp-l-price"></div></fieldset>
     <fieldset class="fp-group"><legend id="fp-l-cat"></legend><div class="seg wrap" id="fp-cats" role="group" aria-labelledby="fp-l-cat"></div></fieldset>
     <fieldset class="fp-group"><legend id="fp-l-radius"></legend><div class="seg" id="fp-radius" role="group" aria-labelledby="fp-l-radius"></div></fieldset>

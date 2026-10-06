@@ -61,3 +61,26 @@ def window(when: str, now: datetime, tz, *, weekend_days=(5, 6), cutoff: int = 0
     else:  # week
         start, end = local, ld + timedelta(days=7) + cut
     return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
+MAX_DAYS_AHEAD = 90
+
+
+def day_window(day: str, now: datetime, tz, *, cutoff: int = 0) -> tuple[datetime, datetime]:
+    """Une date précise (AAAA-MM-JJ, calendrier de la VILLE) : la même « journée logique »
+    que `tomorrow` — de D+coupure à D+1+coupure. Pour le jour logique courant, la fenêtre
+    commence maintenant (comme `today`). Passé ou au-delà de 90 jours : ValueError."""
+    try:
+        d0 = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=tz)
+    except ValueError as exc:
+        raise ValueError(f"date invalide: {day!r} (AAAA-MM-JJ)") from exc
+    local = now.astimezone(tz)
+    ld = logical_day(local, cutoff)
+    delta = (d0.date() - ld.date()).days
+    if delta < 0 or delta > MAX_DAYS_AHEAD:
+        raise ValueError(f"date hors fenêtre: {day!r} (aujourd'hui à +{MAX_DAYS_AHEAD} jours)")
+    cut = timedelta(hours=cutoff)
+    start, end = d0 + cut, d0 + timedelta(days=1) + cut
+    if delta == 0:
+        start = local
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)

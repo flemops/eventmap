@@ -29,8 +29,8 @@ cities:
     names: {fr: "Paris", en: "Paris", ar: "باريس"}
     timezone: Europe/Paris
     currency: EUR
-    languages: [fr]
-    default_language: fr
+    languages: [en, fr]
+    default_language: en     # Phase 15.4 : interface en anglais ; /fr/paris reste servi
     map_center: {lat: 48.8584, lon: 2.3470}
     default_zoom: 13
     radius_options_km: [1, 2, 4, 8]
@@ -38,7 +38,7 @@ cities:
     max_radius_km: 8
     weekend_days: [5, 6]
     night_cutoff_hour: 0
-    home: accueil
+    home: carte              # Phase 15 : « Tonight » d'abord ; les cultures ne sont plus l'entrée (15.22)
     default_price: free
     features: {cultures: true}
     stale_after_hours: 36
