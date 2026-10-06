@@ -377,7 +377,7 @@ technologie « pour faire moderne ».
 * **Typage (Pyright/mypy) : non ajouté.** Évalué : la base n'est pas annotée uniformément ; une passe de
   typage stricte serait une grosse PR cosmétique. À démarrer module par module (`db.py`, `pipeline.py`) si un
   défaut de type réel apparaît.
-* **CodeQL : essayé.** Résultat et critère de réactivation en D20.
+* **CodeQL : essayé puis écarté tant que le dépôt est privé** (D20).
 * **Branche `master` conservée** (pas de passage à `main`) : la migration toucherait le gabarit CI, la VM
   et d'autres chantiers en cours pour un gain nul.
 * **Stratégie de merge unique : commit de merge** (squash et rebase désactivés) : l'historique garde le
@@ -391,11 +391,14 @@ technologie « pour faire moderne ».
 * **Dépendances** : les six dépendances d'exécution sont toutes importées (vérifié) ; `uvicorn[standard]`
   est gardé pour ses extras de performance (uvloop, httptools) sur le chemin chaud.
 
-## D20 — CodeQL sur dépôt privé
+## D20 — CodeQL écarté tant que le dépôt est privé
 
-**Contexte.** CodeQL a été ajouté (`.github/workflows/codeql.yml`) pour Python et JavaScript.
+**Contexte.** CodeQL (Python + JavaScript) a été essayé le 06/10/2026 dans la PR de la phase 16 : l'analyse
+tourne, mais le dépôt des résultats échoue — « Code scanning is not enabled for this repository » (API
+`code-scanning/alerts` : 403) — car il exige GitHub Advanced Security sur un dépôt privé.
 
-**Décision.** Voir le résultat dans la PR de la phase 16 : s'il ne peut pas publier ses résultats sur un
-dépôt privé sans GitHub Advanced Security, le workflow est retiré plutôt que laissé rouge, et réactivé au
-passage du dépôt en public (gratuit). Dans l'intervalle, les contrôles actifs sont Ruff (E/F/B), `pip-audit`
-(dépendances), gitleaks (secrets), et les en-têtes/CSP vérifiés par `deploy/verify_prod.py`.
+**Décision.** Workflow retiré plutôt que laissé rouge ou « vert pour la forme ». **Critère de réactivation** :
+passage du dépôt en public (CodeQL y est gratuit) — remettre `codeql.yml` (actions épinglées sur SHA, matrice
+`python` + `javascript-typescript`, passage hebdomadaire + PR). Contrôles de sécurité actifs entre-temps :
+Ruff (règles E/F/B), `pip-audit` (dépendances), gitleaks (secrets), alertes Dependabot activées sur le dépôt,
+et en-têtes/CSP vérifiés sur le service réel par `deploy/verify_prod.py`.
