@@ -179,6 +179,18 @@ def _persist(results, by_key, fetchers, started):
                 events, dropped = pipeline.normalize(r.events, city_id or cities.DEFAULT_CITY)
                 for k, n in dropped.items():
                     dropped_total[k] = dropped_total.get(k, 0) + n
+                # 14.6 : un lot anormal (volume effondré, géocodage soudain cassé) n'est ni écrit ni purgé :
+                # le dernier contenu sain reste servi. Après QUARANTINE_MAX_STREAK lots écartés de suite,
+                # le suivant est accepté — c'est alors la nouvelle normale, pas un accident.
+                prev = db.source_previous(con, r.name)
+                why = pipeline.batch_anomaly(
+                    (prev or {}).get("last_valid", 0), (prev or {}).get("geo_missing", 0), len(events),
+                    sum(1 for e in events if e.lat is None)) if prev else None
+                if why and (prev.get("quarantine_streak") or 0) < pipeline.QUARANTINE_MAX_STREAK:
+                    streak = db.record_source_quarantine(con, r.name, why, started, city_id=city_id)
+                    log.warning("source %s : lot mis en quarantaine (%d/%d) — %s", r.name, streak,
+                                pipeline.QUARANTINE_MAX_STREAK, why)
+                    continue
                 all_events.extend(events)
                 meta = getattr(fetchers[r.name], "meta", {}) if is_feed else {}
                 if is_feed:
@@ -640,7 +652,9 @@ def compute_alerts(con, now: datetime) -> list[dict]:
       ingestion_errors  3 cycles d'erreurs de suite ;
       silent_source     elle repond mais ne rapporte plus rien (2 cycles vides de suite) ;
       stale_data        la derniere donnee recue est plus vieille que `stale_after_hours` ;
-      geocoding         plus de 30 % des evenements valides sans coordonnees.
+      geocoding         plus de 30 % des evenements valides sans coordonnees ;
+      quarantine        des lots anormaux sont ecartes depuis 2 cycles (le dernier contenu sain reste servi) ;
+      db_integrity      `PRAGMA quick_check` ne repond pas « ok ».
 
     Seules les villes ALLUMEES comptent : une ville eteinte, ou une source non autorisee,
     n'est pas une panne.
@@ -658,6 +672,10 @@ def compute_alerts(con, now: datetime) -> list[dict]:
                     "detail": "aucun cycle depuis le demarrage"})
     if any(r.get("source") == "refresh" and not r.get("ok") for r in _refresh_state.get("last_results", [])):
         out.append({"kind": "refresh_failed", "city": None, "source": None, "detail": "cycle interrompu"})
+
+    verdict = db.integrity(con)
+    if verdict != "ok":
+        out.append({"kind": "db_integrity", "city": None, "source": None, "detail": verdict[:200]})
 
     specs = registry.load()
     for c in cities.all_active():
@@ -679,6 +697,9 @@ def compute_alerts(con, now: datetime) -> list[dict]:
             if age_h is not None and age_h > c.stale_after_hours:
                 out.append({**base, "kind": "stale_data",
                             "detail": f"donnee vieille de {age_h} h (seuil {c.stale_after_hours} h)"})
+            if (r.get("quarantine_streak") or 0) >= 2:
+                out.append({**base, "kind": "quarantine",
+                            "detail": f'{r["quarantine_streak"]} lots ecartes : {r.get("quarantine_reason")}'})
             valid = r.get("last_valid") or 0
             if valid >= 10 and (r.get("geo_missing") or 0) / valid > 0.3:
                 out.append({**base, "kind": "geocoding", "detail": f'{r["geo_missing"]}/{valid} sans coordonnees'})
