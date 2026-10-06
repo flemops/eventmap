@@ -111,7 +111,7 @@ GitHub Actions.** No build step, no front-end framework, no external service to 
 * **Post-deploy verification** ([`post-deploy.yml`](.github/workflows/post-deploy.yml)): waits for the expected commit to be
   live (`/health` → `release.commit`), then replays [`deploy/verify_prod.py`](deploy/verify_prod.py) read-only against production.
 * **Monitoring**: a scheduled workflow ([`surveillance.yml`](.github/workflows/surveillance.yml)) probes `/health` (availability)
-  and `/health?strict=1` (data) every two hours and opens / comments / closes a GitHub issue — one alert, one conversation.
+  and `/health?strict=1` (data) on a two-hour cron (GitHub schedules are best-effort) and opens / comments / closes a GitHub issue — one alert, one conversation.
 
 ## Security and privacy
 
