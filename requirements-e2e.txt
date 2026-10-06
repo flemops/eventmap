@@ -1,0 +1,4 @@
+# Tests de bout en bout (navigateur réel). Séparés de requirements-dev.txt : la CI principale n'installe pas Chromium.
+# Installation : pip install -r requirements-dev.txt -r requirements-e2e.txt && playwright install chromium
+playwright==1.63.0
+axe-playwright-python==0.1.8

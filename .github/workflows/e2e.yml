@@ -1,0 +1,38 @@
+name: E2E (navigateur réel)
+
+# Parcours critiques dans Chromium (Playwright) contre un serveur de test à base jetable : aucun réseau
+# externe, aucune donnée réelle. Séparé de la porte de qualité : il n'est lancé que quand l'interface ou
+# l'API changent (et une fois par semaine), pour rester sous le quota gratuit de minutes (D19).
+
+on:
+  pull_request:
+    paths: ["static/**", "main.py", "render.py", "cities.yaml", "tests/e2e/**", "requirements*.txt", ".github/workflows/e2e.yml"]
+  schedule:
+    - cron: "27 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Parcours critiques (Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Installation
+        run: pip install -r requirements-dev.txt -r requirements-e2e.txt
+      - name: Chromium (avec ses dépendances système)
+        run: playwright install --with-deps chromium
+      - name: Parcours E2E + axe (WCAG)
+        run: pytest tests/e2e -v
