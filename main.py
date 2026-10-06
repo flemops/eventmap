@@ -150,6 +150,60 @@ def _publish_priorities(specs: list[registry.SourceSpec]) -> None:
                             for s in specs})
 
 
+def _persist(results, by_key, fetchers, started):
+    """Toute la phase d'écriture d'un cycle (normalisation, upsert, dédoublonnage, purge).
+
+    Synchrone et gourmande en CPU (plusieurs secondes sur la VM, quota de 50 %) : elle
+    tourne dans un FIL à part (`asyncio.to_thread`). Exécutée dans la boucle
+    d'événements, elle gelait l'API — /health compris — pendant tout le cycle (constaté
+    en production le 06/10/2026 : ~45 s sans réponse). La connexion SQLite est créée ET
+    utilisée dans ce fil, comme SQLite l'exige."""
+    with db.session() as con:
+        all_events: list[db.Event] = []
+        dropped_total: dict[str, int] = {}
+        for r in results:
+            spec = by_key.get(r.name)
+            city_id = spec.city_id if spec else None
+            is_feed = r.name != "qfap"
+            if r.ok:
+                events, dropped = pipeline.normalize(r.events, city_id or cities.DEFAULT_CITY)
+                for k, n in dropped.items():
+                    dropped_total[k] = dropped_total.get(k, 0) + n
+                all_events.extend(events)
+                meta = getattr(fetchers[r.name], "meta", {}) if is_feed else {}
+                if is_feed:
+                    db.mark_feed(con, r.name, ok=True,
+                                 etag=meta.get("etag"), last_modified=meta.get("last_modified"))
+                db.record_source_health(con, r.name, len(r.events), started, city_id=city_id,
+                                        valid=len(events),
+                                        geo_missing=sum(1 for e in events if e.lat is None))
+                # Un 304 ne renvoie rien : on ne purge surtout pas.
+                # Une source qui reussit mais renvoie ZERO non plus :
+                # `purge_stale` effacerait tout son contenu, et c'est
+                # exactement ce que fait un parseur casse en silence.
+                # On garde l'ancien contenu, quitte a le voir vieillir.
+                if not meta.get("not_modified") and events:
+                    for src in {e.source for e in events}:
+                        db.purge_stale(con, src, started)
+                elif not r.events and not meta.get("not_modified"):
+                    log.warning("source %s : 0 evenement alors qu'elle "
+                                "repond OK — purge annulee", r.name)
+            else:
+                db.record_source_failure(con, r.name, r.error or "", started, city_id=city_id)
+                if is_feed:
+                    disabled = db.mark_feed(con, r.name, ok=False, error=r.error)
+                    if disabled:
+                        log.warning("flux désactivé après échecs répétés: %s", r.name)
+
+        # Plus de fusion pré-upsert (D9) : toutes les sources sont
+        # écrites telles quelles, et dedup_inter_source() marque les
+        # doublons APRÈS coup, de façon réversible (doublon_de).
+        n = db.upsert_events(con, all_events)
+        dedup_counts = sources.dedup_inter_source(con, now=started)
+        purged = db.purge_past(con)
+    return len(all_events), n, dedup_counts, purged, dropped_total
+
+
 async def refresh() -> list[sources.SourceResult]:
     """Un cycle complet : agrégation, normalisation, dédoublonnage, upsert, purge, marquage."""
     if _refresh_lock.locked():
@@ -173,61 +227,22 @@ async def refresh() -> list[sources.SourceResult]:
                     intervals[urlsplit(s.url).netloc] = s.min_interval_s
             results = await sources.aggregate(fetchers, policies=policies, intervals=intervals)
 
-            with db.session() as con:
-                all_events: list[db.Event] = []
-                dropped_total: dict[str, int] = {}
-                for r in results:
-                    spec = by_key.get(r.name)
-                    city_id = spec.city_id if spec else None
-                    is_feed = r.name != "qfap"
-                    if r.ok:
-                        events, dropped = pipeline.normalize(r.events, city_id or cities.DEFAULT_CITY)
-                        for k, n in dropped.items():
-                            dropped_total[k] = dropped_total.get(k, 0) + n
-                        all_events.extend(events)
-                        meta = getattr(fetchers[r.name], "meta", {}) if is_feed else {}
-                        if is_feed:
-                            db.mark_feed(con, r.name, ok=True,
-                                         etag=meta.get("etag"), last_modified=meta.get("last_modified"))
-                        db.record_source_health(con, r.name, len(r.events), started, city_id=city_id,
-                                                valid=len(events),
-                                                geo_missing=sum(1 for e in events if e.lat is None))
-                        # Un 304 ne renvoie rien : on ne purge surtout pas.
-                        # Une source qui reussit mais renvoie ZERO non plus :
-                        # `purge_stale` effacerait tout son contenu, et c'est
-                        # exactement ce que fait un parseur casse en silence.
-                        # On garde l'ancien contenu, quitte a le voir vieillir.
-                        if not meta.get("not_modified") and events:
-                            for src in {e.source for e in events}:
-                                db.purge_stale(con, src, started)
-                        elif not r.events and not meta.get("not_modified"):
-                            log.warning("source %s : 0 evenement alors qu'elle "
-                                        "repond OK — purge annulee", r.name)
-                    else:
-                        db.record_source_failure(con, r.name, r.error or "", started, city_id=city_id)
-                        if is_feed:
-                            disabled = db.mark_feed(con, r.name, ok=False, error=r.error)
-                            if disabled:
-                                log.warning("flux désactivé après échecs répétés: %s", r.name)
+            n_events, n, dedup_counts, purged, dropped_total = await asyncio.to_thread(
+                _persist, results, by_key, fetchers, started)
 
-                # Plus de fusion pré-upsert (D9) : toutes les sources sont
-                # écrites telles quelles, et dedup_inter_source() marque les
-                # doublons APRÈS coup, de façon réversible (doublon_de).
-                n = db.upsert_events(con, all_events)
-                dedup_counts = sources.dedup_inter_source(con, now=started)
-                purged = db.purge_past(con)
-                links = {}
-                for c in cities.all_active():
-                    if c.features.get("linkcheck"):
-                        async with sources.PoliteClient(timeout=10.0) as lc:
+            links = {}
+            for c in cities.all_active():
+                if c.features.get("linkcheck"):
+                    async with sources.PoliteClient(timeout=10.0) as lc:
+                        with db.session() as con:
                             links[c.id] = await linkcheck.run(con, lc, c.id, started)
-                if links:
-                    _refresh_state["links"] = links
+            if links:
+                _refresh_state["links"] = links
 
             ok = sum(1 for r in results if r.ok)
             log.info("refresh terminé en %.1fs : %d/%d sources OK, %d créneaux, %d upserts, "
                      "%d doublons forts + %d faibles + %d traductions marqués, %d passés purgés, écartés=%s",
-                     time.monotonic() - t0, ok, len(results), len(all_events), n,
+                     time.monotonic() - t0, ok, len(results), n_events, n,
                      dedup_counts["forte"], dedup_counts["faible"], dedup_counts["traduction"],
                      purged, dropped_total or "{}")
             _refresh_state["last_results"] = [
