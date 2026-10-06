@@ -108,7 +108,7 @@ async def fetch(client: PoliteClient) -> list[Event]:
     offset = 0
     total: int | None = None
 
-    for page in range(MAX_PAGES):
+    for _page in range(MAX_PAGES):
         resp = await client.get(ENDPOINT, params={
             "limit": PAGE_SIZE, "offset": offset, "select": FIELDS,
             # Filtre côté serveur : périmètre Paris intra-muros uniquement, et

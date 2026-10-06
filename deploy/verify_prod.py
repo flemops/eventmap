@@ -5,7 +5,13 @@
 Contrôle /health (latence, refresh, sources, alertes, villes), les fenêtres et le fuseau, les filtres,
 les routes et deep links, les pages (canonique, JSON-LD, CSP, assets versionnés), un échantillon de
 liens externes, et que les villes éteintes sont bien introuvables. Nécessite `zoneinfo` + tzdata."""
-import json, re, statistics, sys, time, urllib.error, urllib.request
+import json
+import re
+import statistics
+import sys
+import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 

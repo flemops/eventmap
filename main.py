@@ -22,7 +22,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import cities
@@ -109,7 +109,7 @@ def _build_fetchers(con, now: datetime | None = None
                 fetcher = (lambda c, _s=spec: sources_jsonld.fetch(
                     c, _s.url, _s.options, source=f"{_s.kind}:{_s.url}"))
             elif spec.kind == "openagenda":
-                fetcher = (lambda c, _uid=spec.url.rsplit("/", 1)[-1]: sources.fetch_openagenda(c, _uid))
+                fetcher = (lambda c, _uid=spec.url.rsplit("/", 1)[-1]: sources.fetch_openagenda(c, _uid))  # noqa: B008 — _uid figé à la création (liaison tardive voulue)
             else:
                 continue       # `jsonld` et `llm` ne tournent que sur demande explicite
         # Cadence : ne pas réinterroger une source plus souvent que `refresh_hours`.
@@ -322,7 +322,7 @@ def _window(when: str, now: datetime, city: cities.City | None = None) -> tuple[
         return timewin.window(when, now, city.tz, weekend_days=city.weekend_days,
                               cutoff=city.night_cutoff_hour)
     except ValueError as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
 
 
 def _city_or_404(city_id: str | None) -> cities.City:

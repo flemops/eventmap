@@ -20,10 +20,10 @@ import os
 import re
 import time
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from html import unescape
-from typing import Awaitable, Callable
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -81,7 +81,7 @@ CATEGORY_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
 
 
 def normalize_category(*labels: str | None) -> str:
-    haystack = " ".join(l.lower() for l in labels if l)
+    haystack = " ".join(lab.lower() for lab in labels if lab)
     for cat, keys in CATEGORY_KEYWORDS:
         if any(k in haystack for k in keys):
             return cat
@@ -118,7 +118,7 @@ class PoliteClient:
             follow_redirects=False,
         )
 
-    async def __aenter__(self) -> "PoliteClient":
+    async def __aenter__(self) -> PoliteClient:
         return self
 
     async def __aexit__(self, *exc) -> None:
@@ -151,8 +151,8 @@ class PoliteClient:
 def parse_ics(raw: bytes | str, *, source: str, default_url: str | None = None,
               window: tuple[datetime, datetime] | None = None) -> list[Event]:
     """Développe un calendrier en événements, RRULE incluses, dans la fenêtre."""
-    from icalendar import Calendar
     from dateutil.rrule import rrulestr
+    from icalendar import Calendar
 
     start_min, start_max = window or ingest_window()
     cal = Calendar.from_ical(raw)
@@ -577,6 +577,7 @@ def dedup_inter_source(con, *, now: datetime | None = None) -> dict[str, int]:
     de priorite ou une source qui disparait ne laisse pas de lien orphelin.
     """
     import json
+
     from cities import get as _city
     from db import _haversine_km, _iso
 

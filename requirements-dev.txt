@@ -1,0 +1,9 @@
+# Outils de développement et de CI — jamais installés sur la VM (elle ne lit que requirements.txt).
+# Une seule commande pour un poste vierge :  pip install -r requirements-dev.txt
+-r requirements.txt
+
+pytest==9.1.1
+pytest-cov==7.1.0
+coverage==7.16.2
+ruff==0.16.10
+pip-audit==2.10.1

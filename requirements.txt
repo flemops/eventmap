@@ -18,6 +18,3 @@ PyYAML==6.0.3
 
 # Optionnel — scrape.py uniquement, jamais chargé sans ANTHROPIC_API_KEY
 # anthropic>=0.40
-
-# Développement
-pytest==9.1.1

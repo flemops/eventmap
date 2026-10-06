@@ -12,10 +12,10 @@ from __future__ import annotations
 import math
 import os
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterator
 
 DB_PATH = os.environ.get("EVENTMAP_DB", "data/eventmap.db")
 
