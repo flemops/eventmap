@@ -155,9 +155,22 @@ Aucune ligne de Python n'est à modifier.
 > l'autorisez, par écrit, et par quel canal (flux, API partenaire) vous préférez que je procède ?
 > Merci d'avance.
 
-## Go / no-go Jeddah (06/10/2026)
+## Go / no-go Jeddah (mis à jour le 06/10/2026)
 
-**NO-GO pour l'ouverture publique de Jeddah.** Le moteur est prêt (143 tests, migration et retour
-arrière vérifiés sur données réelles de Paris), la ville reste éteinte tant qu'aucune source
-n'est autorisée — voir `docs/jeddah-sources.md`. Ce n'est pas un échec d'ingénierie : afficher
-des données non autorisées ou une carte vide serait pire que ne pas ouvrir.
+**NO-GO pour l'ouverture publique de Jeddah.** Critères du plan, un par un :
+
+| Critère | État vérifié |
+|---|---|
+| Aucune régression Paris critique | OK — 51 contrôles sur le service réel (`deploy/verify_prod.py`), base de 16 000+ événements intacte après migration, `/health` ≤ 0,5 s pendant un cycle de refresh (après correction d'un gel de ~45 s, PR #7) |
+| Routes / deep links stables | OK pour Paris ; Jeddah répond 404 lisible tant qu'elle est éteinte |
+| EN + AR + RTL | OK sur fixtures (parcours complet mobile et bureau) ; relecture arabe par un locuteur natif **non faite** |
+| Accessibilité | axe-core : 0 violation sur 6 pages, thèmes clair et sombre ; lecteur d'écran réel **non testé** |
+| Rollback testé | OK (ancien code sur base migrée ; interrupteurs ville/source) |
+| Monitoring actif | OK — `/health?strict=1` + sonde GitHub Actions (issue ouverte/fermée testée de bout en bout) ; Uptime Kuma non branché (accès Access) |
+| Sources autorisées et traçables | **NON** — aucune source de Jeddah n'est autorisée (voir `docs/jeddah-sources.md`) |
+| Données Jeddah fraîches, horaires et prix fiables | **NON** — aucune donnée réelle |
+| Données réellement disponibles | **NON** |
+
+Ce n'est pas un échec d'ingénierie : afficher des données non autorisées, ou une carte vide présentée comme
+« rien ce soir », serait pire que ne pas ouvrir. Le GO devient possible dès qu'**une** source autorisée existe :
+`authorization: ok` + connecteur + `EVENTMAP_CITIES_ENABLED=jeddah`, puis relancer `deploy/verify_prod.py`.
