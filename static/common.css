@@ -3,12 +3,13 @@
 :root {
   --bg: #12131f; --panel: #1b1d2e; --chip-bg: #20223a; --line: #2b2e45; --text: #eef0fa; --muted: #8b8fae;
   --accent: #ef3d6e; --accent-glow: rgba(239,61,110,.35); --free: #4fd694; --paid: #f0a93c;
+  --accent-bg: #d1215a;   /* fond de bouton : texte blanc dessus = 5,15:1 (l'accent seul donne 3,78:1) */
   --radius: 12px; --safe-b: env(safe-area-inset-bottom, 0px);
 }
 @media (prefers-color-scheme: light) {
   :root {
     --bg: #f7f4ee; --panel: #fff; --chip-bg: #f0ece1; --line: #e6e0d2; --text: #1c1b22; --muted: #6b6577;
-    --accent: #c81155; --accent-glow: rgba(200,17,85,.2); --free: #1f8a5c; --paid: #a8650f;
+    --accent: #c81155; --accent-glow: rgba(200,17,85,.2); --free: #17734d; --paid: #a8650f; --accent-bg: #c81155;
   }
 }
 * { box-sizing: border-box; }
@@ -22,7 +23,7 @@
   background: var(--chip-bg); color: var(--text); font: inherit; font-size: 14px; cursor: pointer;
   white-space: nowrap; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
-.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 0 0 4px var(--accent-glow); }
+.chip[aria-pressed="true"] { background: var(--accent-bg); border-color: var(--accent-bg); color: #fff; box-shadow: 0 0 0 4px var(--accent-glow); }
 
 .when {
   display: flex; flex-direction: column; align-items: center; justify-content: center;

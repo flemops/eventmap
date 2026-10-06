@@ -97,7 +97,8 @@ body {
   font-size: 14px; font-weight: 600;
 }
 .mapcard .cta em { font-style: normal; color: var(--muted); font-weight: 400; font-size: 12.5px; }
-.mapcard .cta .go { color: var(--accent); white-space: nowrap; }
+/* accent #ef3d6e sur le panneau sombre = 4,41:1 (< 4,5) : texte de lien en var(--text), souligné au survol */
+.mapcard .cta .go { color: var(--text); font-weight: 600; white-space: nowrap; }
 
 /* ---- filtres catégories --------------------------------------------------- */
 .row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
@@ -154,7 +155,7 @@ footer { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 12px;
 </style>
 </head>
 <body>
-<div class="wrap">
+<main class="wrap">
 
   <header class="top">
     <h1>Ce soir à Paris, <span>gratuit d'abord</span></h1>
@@ -194,7 +195,7 @@ footer { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 12px;
     Sources : <a href="https://opendata.paris.fr/explore/dataset/que-faire-a-paris-/" rel="noopener">Que faire à Paris — Ville de Paris (ODbL)</a> · <a href="https://openagenda.com/agendas/61665301" rel="noopener">FICEP via OpenAgenda (licence ouverte)</a>. Cartes © <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a>.
   </footer>
 
-</div>
+</main>
 <script src="/static/vendor/leaflet/leaflet.js"></script>
 <script src="/static/i18n.js?v=%%V%%"></script>
 <script src="/static/common.js?v=%%V%%"></script>

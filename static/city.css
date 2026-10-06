@@ -119,8 +119,7 @@ html:has(body.gate), body.gate { height: auto; }
 body.gate { background: var(--bg); color: var(--text); font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Arabic", Roboto, sans-serif;
             min-height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; padding: 24px 16px; gap: 20px; }
 /* Centré SANS jamais rendre le haut inaccessible quand le contenu dépasse l'écran. */
-body.gate > :first-child { margin-top: auto; }
-body.gate > :last-child { margin-bottom: auto; }
+body.gate > main { margin-block: auto; display: flex; flex-direction: column; align-items: center; gap: 20px; width: 100%; }
 body.gate h1 { margin: 0; font-size: 28px; text-align: center; letter-spacing: -.01em; }
 .cities { display: grid; gap: 12px; width: min(560px, 100%); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .city-card { display: grid; gap: 4px; padding: 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line);
@@ -150,5 +149,5 @@ body.carte-page, body.gate { --accent-bg: #d1215a; --accent-fg: #ff7a9f; }
   body.carte-page, body.gate { --accent-bg: #c81155; --accent-fg: #c81155; --free: #17734d; }
 }
 .carte-page .chip[aria-pressed="true"], .btn.primary { background: var(--accent-bg); border-color: var(--accent-bg); }
-.detail .back, .city-card .go, .leaflet-popup-content a { color: var(--accent-fg); }
+.detail .back, .city-card .go, .leaflet-popup-content a, body.gate article a:not(.btn), body.gate header a { color: var(--accent-fg); }
 .langs a[aria-current="true"] { border-color: var(--accent-fg); }

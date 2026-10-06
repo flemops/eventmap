@@ -24,6 +24,7 @@
   $("#free").textContent = t("free");
   $("#lbl-city").textContent = t("city");
   $("#sheet").setAttribute("aria-label", t("list"));
+  $("#list-title").textContent = t("list");
   $("#map").setAttribute("aria-label", t("map"));
   $("#radius").innerHTML = CITY.radius_options_km.map((k, i) =>
     `<option value="${k}">${k === CITY.max_radius_km ? t("all_city") : `${k} ${t("km")}`}</option>`).join("");

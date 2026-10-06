@@ -33,7 +33,7 @@ T = "[FIXTURE] "
 jeddah = [
     # (titre, +heures, durée h, venue, lat, lon, catégorie, prix, extras)
     (T + "Jazz au bord de la mer / Seaside Jazz", 2, 2, "Jeddah Yacht Club", 21.6529588, 39.1015469, "music",
-     dict(price_type="paid", price_min=150.0, price_max=300.0, currency="SAR", booking_url="https://example.org/tickets",
+     dict(price_type="paid", price_min=150.0, price_max=300.0, currency="SAR", booking_url="https://example.org/",
           lang="en", i18n={"ar": {"title": T + "جاز على البحر", "description": "أمسية جاز مباشرة على الواجهة البحرية."}},
           description="An evening of live jazz on the waterfront (test fixture).")),
     (T + "Historic walk", 3, 2, "Al-Balad", 21.4860371, 39.1876960, "talk", dict(price_type="free", lang="en")),

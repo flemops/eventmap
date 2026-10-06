@@ -320,6 +320,18 @@ def root_page(site: str):
     return HTMLResponse(_fill(_template("gate.html"), tokens))
 
 
+def not_found_page() -> HTMLResponse:
+    """404 lisible : on dit ce qui est disponible au lieu d'un JSON brut. Une ville éteinte
+    (ou inconnue) arrive ici — elle n'est jamais présentée comme « vide »."""
+    s = i18n.strings("en")
+    cards = "".join(
+        f'<a class="city-card" href="{_esc(city_path(c))}"><b>{_esc(c.name("en"))}</b>'
+        f'<span class="go">{_esc(s["explore"])}</span></a>' for c in cities.all_active())
+    return HTMLResponse(_fill(_template("notfound.html"), {
+        "TITLE": _esc(s["nf_title"]), "MESSAGE": _esc(s["nf_msg"]), "CITY_CARDS": cards, "V": asset_version()}),
+        status_code=404)
+
+
 def sitemap_xml(site: str) -> str:
     """Pages publiques des villes allumées. « / » n'y figure que s'il EST une page
     distincte (le choix de ville) : avec une seule ville il sert son accueil,

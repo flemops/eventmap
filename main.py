@@ -722,5 +722,5 @@ def city_pages(a: str, b: str | None = None, c: str | None = None, d: str | None
     """/paris, /paris/carte, /paris/e/12, /ar/jeddah, /ar/jeddah/carte, /ar/jeddah/e/12."""
     page = render.city_page([p for p in (a, b, c, d) if p is not None], SITE)
     if page is None:
-        raise HTTPException(404, "page introuvable")
+        return render.not_found_page()
     return page
