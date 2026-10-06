@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import platform
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -31,6 +32,7 @@ import db
 import linkcheck
 import pipeline
 import registry
+import release
 import render
 import sources
 import sources_jsonld
@@ -563,6 +565,7 @@ def api_categories(city: str | None = Query(None, pattern="^[a-z][a-z0-9-]{1,30}
 
 
 _STARTED = datetime.now(timezone.utc)
+_COMMIT = release.read_commit(BASE_DIR)      # commit déployé, exposé par /health (release.py)
 STARTUP_GRACE = timedelta(minutes=20)       # le premier cycle part 5 s apres le demarrage et dure ~1-2 min
 
 
@@ -659,6 +662,7 @@ def health(strict: bool = Query(False, description="503 s'il y a une alerte (sur
             degraded = True
     body = {
         "status": "degraded" if degraded else "ok",
+        "release": {"commit": _COMMIT[:12] if _COMMIT else None, "python": platform.python_version()},
         "silent_sources": silent,
         "db": s,
         "feeds": {"total": len(feeds), "enabled": sum(f["enabled"] for f in feeds)},

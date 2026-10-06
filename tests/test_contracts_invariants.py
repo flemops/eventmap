@@ -169,3 +169,31 @@ def test_invariant_une_date_naive_est_interpretee_dans_le_fuseau_de_la_source(na
     d = sources_jsonld._parse_start(naif, tz, False)
     assert d is not None and d.tzinfo is not None
     assert d.astimezone(UTC).hour == 18      # 20 h à Paris en octobre (UTC+2), pas 20 h UTC
+
+
+# ------------------------------------------------------------------ version déployée
+
+def test_release_lit_le_commit_sans_git(tmp_path):
+    import release
+    sha = "a" * 40
+    (tmp_path / ".git" / "refs" / "heads").mkdir(parents=True)
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/master\n")
+    (tmp_path / ".git" / "refs" / "heads" / "master").write_text(sha + "\n")
+    assert release.read_commit(tmp_path) == sha                                  # référence de branche
+    (tmp_path / ".git" / "HEAD").write_text(sha[::-1].replace("a", "b") + "\n")
+    assert release.read_commit(tmp_path) == "b" * 40                             # HEAD détaché (tag prod)
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/tags/prod\n")
+    (tmp_path / ".git" / "packed-refs").write_text(f"# pack-refs\n{'c' * 40} refs/tags/prod\n")
+    assert release.read_commit(tmp_path) == "c" * 40                             # référence empaquetée
+    assert release.read_commit(tmp_path / "inexistant") is None                  # pas de dépôt : jamais d'exception
+
+
+def test_health_expose_le_commit_et_la_version_python(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import main
+    monkeypatch.setattr(main, "_COMMIT", "d" * 40)
+    orig = db.session
+    monkeypatch.setattr(db, "session", lambda: orig(str(tmp_path / "h.db")))
+    body = TestClient(main.app).get("/health").json()
+    assert body["release"]["commit"] == "d" * 12 and body["release"]["python"].count(".") == 2
