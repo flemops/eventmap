@@ -39,7 +39,7 @@ introduire des releases numérotées n'apporterait rien tant qu'il n'y a qu'un s
 |---|---|---|
 | Dépendances Python | `pip-audit --strict` dans `ci.yml` | une vulnérabilité connue dans `requirements.txt` fait échouer la PR ; un faux positif sans correctif se tolère par `--ignore-vuln <ID>` **avec justification dans le workflow**, jamais en coupant l'étape |
 | SBOM | artefact `sbom` de `ci.yml` (CycloneDX) | inventaire des dépendances d'exécution, conservé 30 jours |
-| Mises à jour | `.github/dependabot.yml` (pip + actions) | une PR groupée par mois et par écosystème |
+| Mises à jour | `.github/dependabot.yml` (pip) | une PR groupée par mois ; **actions GitHub : mise à jour manuelle** (Dependabot échoue sur le gabarit privé `ci-templates`, même avec `ignore:`), SHA imposés par test |
 | Actions GitHub tierces | épinglées sur le **SHA de commit** + tag en commentaire | compromis : une mise à jour est une PR Dependabot à relire, en échange de l'impossibilité de voir un tag déplacé exécuter du code nouveau |
 | Gabarit CI `ci-templates` | `prod-tag.yml` épinglé sur un SHA | le gabarit décide si un commit peut être déployé : un changement du gabarit ne doit pas être silencieux. dépôt privé inaccessible à Dependabot (constaté le 06/10/2026) : **mise à jour du SHA à la main**, après relecture du diff du gabarit |
 | Secrets | `gitleaks` (commits de la PR) ; audit d'historique complet à la demande (`docs/public-readiness.md`) | `.env`, clés et bases sont dans `.gitignore` ; aucun secret en clair dans les workflows |
