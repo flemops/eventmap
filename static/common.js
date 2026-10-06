@@ -32,6 +32,14 @@ window.EM_COMMON = (() => {
     if (e.price_min != null) return I.t("from_price", { p: money(e.price_min, e.currency) });
     return PRICE_LABEL[e.price_type] || "";
   }
+  /* Distance lisible : « < 100 m », « 350 m », « 1,2 km » (virgule ou point selon la langue). */
+  const nf1 = new Intl.NumberFormat(I.locale, { maximumFractionDigits: 1 });
+  const fmtDist = (km) => {
+    if (km == null || Number.isNaN(+km)) return "";
+    if (km < 0.1) return `< 100 ${I.t("m")}`;
+    if (km < 0.975) return `${Math.round(km * 20) * 50} ${I.t("m")}`;   // arrondi à 50 m
+    return `${nf1.format(km)} ${I.t("km")}`;
+  };
   const directionsUrl = (e) => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(e.lat + "," + e.lon)}`;
   const api = (path, params = {}) => {
     const q = new URLSearchParams({ city: CITY.id, ...params });
@@ -39,5 +47,5 @@ window.EM_COMMON = (() => {
   };
 
   return { CITY, PATHS, LANG: I.lang, I, CATEGORY_LABELS, PRICE_LABEL, esc, safeHref, fmtTime, fmtDay, fmtDayLong,
-           priceText, directionsUrl, api };
+           priceText, fmtDist, directionsUrl, api };
 })();

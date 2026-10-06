@@ -82,10 +82,11 @@ def footer_html(city: cities.City, lang: str = "fr") -> str:
 def city_switch_html(current: cities.City, lang: str) -> str:
     """Sélecteur de ville rendu côté serveur (marche sans JavaScript).
 
-    Villes allumées : liens. Villes éteintes déclarées `teaser` : un bouton `aria-disabled`
-    (focusable, donc lisible au clavier) + un badge « Coming soon » ; l'explication est dans
-    le HTML (`aria-describedby`) et static/cityswitch.js l'affiche au clic. Rien d'une ville
-    teaser n'est une page, une route ou une donnée : c'est du texte."""
+    Un `<details>` : le bouton fermé dit seulement la ville courante (« Paris ▾ »), le panneau
+    ouvert liste les villes. Villes allumées : liens + badge « Live ». Villes éteintes déclarées
+    `teaser` : un bouton `aria-disabled` (focusable) + badge « Coming soon » ; le message est dans le
+    HTML (`aria-describedby`) et static/cityswitch.js l'affiche au clic. Rien d'une ville teaser
+    n'est une page, une route ou une donnée : c'est du texte."""
     s = i18n.strings(lang)
     items = []
     for c in cities.all_active():
@@ -104,11 +105,13 @@ def city_switch_html(current: cities.City, lang: str) -> str:
                      f'aria-expanded="false" aria-controls="{mid}" aria-describedby="{mid}">'
                      f'{_esc(c.name(lang))} <span class="cs-badge">{_esc(s["cs_soon"])}</span></button></li>')
         msgs.append(f'<p class="cs-msg" id="{mid}" role="status" hidden>'
-                    f'{_esc(s["cs_ready"].format(city=c.name(lang)))}</p>')
+                    f'<strong>{_esc(s["cs_ready_title"].format(city=c.name(lang)))}</strong>'
+                    f'<span>{_esc(s["cs_ready"])}</span></p>')
     if len(items) < 2:
         return ""
-    return (f'<nav class="cityswitch" aria-label="{_esc(s["cs_label"])}"><ul>{"".join(items)}</ul>'
-            f'{"".join(msgs)}</nav>')
+    return (f'<nav class="cityswitch" aria-label="{_esc(s["cs_label"])}"><details class="cs">'
+            f'<summary>{_esc(current.name(lang))}<span class="sr"> — {_esc(s["cs_label"])}</span></summary>'
+            f'<div class="cs-pop"><ul>{"".join(items)}</ul>{"".join(msgs)}</div></details></nav>')
 
 
 def _fill(tpl: str, tokens: dict[str, str]) -> str:
