@@ -49,6 +49,10 @@ jobs:
         run: |
           code=$(curl --silent --show-error --max-time 30 --retry 2 --retry-delay 10 \
                       -o sante.json -w '%{http_code}' "$BASE/health?strict=1")
+          if [ "${{ inputs.simuler_alerte }}" = "true" ]; then
+            code=503
+            echo '{"alerts":[{"kind":"stale_data","city":"paris","source":"qfap","detail":"SIMULATION : test du suivi des alertes"}]}' > sante.json
+          fi
           echo "code=$code" >> "$GITHUB_OUTPUT"
           {
             echo "Sonde du $(date -u +%FT%TZ) — HTTP $code"
