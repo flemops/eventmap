@@ -460,6 +460,18 @@ def _title_similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, na, nb).ratio()
 
 
+def _sim(na: str, nb: str) -> float:
+    """Ratio de similarité entre deux titres DÉJÀ normalisés, avec arrêt anticipé :
+    `quick_ratio` est une borne supérieure peu coûteuse de `ratio`."""
+    from difflib import SequenceMatcher
+    if not na or not nb:
+        return 0.0
+    sm = SequenceMatcher(None, na, nb)
+    if sm.real_quick_ratio() < 0.85 or sm.quick_ratio() < 0.85:
+        return 0.0
+    return sm.ratio()
+
+
 # Priorite de chaque source (registry.SourceSpec.priority), posee par main au
 # demarrage : un enregistrement plus ancien d'une source moins fiable ne peut pas
 # l'emporter sur l'information plus recente d'une source officielle (13.6).
@@ -576,6 +588,11 @@ def dedup_inter_source(con, *, now: datetime | None = None) -> dict[str, int]:
 
     by_day: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for r in rows:
+        # Normalisé UNE fois par ligne (pas une fois par comparaison) : c'est ce qui
+        # coûtait l'essentiel du temps du cycle (7 s pour 16 000 lignes, bien plus sur la VM).
+        r["_nt"] = _norm_title(r["title"])
+        r["_nv"] = _norm_venue(r["venue"]) if r["venue"] else ""
+        r["_ts"] = datetime.fromisoformat(r["start"]).timestamp()
         by_day[(r["city_id"], r["start"][:10])].append(r)
 
     counts = {"forte": 0, "faible": 0, "traduction": 0}
@@ -588,11 +605,15 @@ def dedup_inter_source(con, *, now: datetime | None = None) -> dict[str, int]:
                 anchor = cluster[0]
                 if anchor["source"] == r["source"]:
                     continue                       # meme source : gere par UNIQUE
-                sim = _title_similarity(anchor["title"], r["title"])
+                # Filtres bon marché d'abord : sans créneau proche NI même lieu, aucune des
+                # deux passes ne peut aboutir — inutile de comparer les titres.
+                dt = abs(anchor["_ts"] - r["_ts"])
+                same_venue = bool(anchor["_nv"] and r["_nv"] and anchor["_nv"] == r["_nv"])
+                if dt > 1800 and not same_venue:
+                    continue
+                sim = _sim(anchor["_nt"], r["_nt"])
                 if sim < 0.85:
                     continue
-                dt = abs((datetime.fromisoformat(anchor["start"])
-                         - datetime.fromisoformat(r["start"])).total_seconds())
                 forte = False
                 if sim >= 0.85 and dt <= 1800:
                     if anchor["lat"] is None or r["lat"] is None:
@@ -600,8 +621,6 @@ def dedup_inter_source(con, *, now: datetime | None = None) -> dict[str, int]:
                     else:
                         d = _haversine_km(anchor["lat"], anchor["lon"], r["lat"], r["lon"])
                         forte = d is not None and d * 1000 <= 150
-                same_venue = (anchor["venue"] and r["venue"]
-                             and _norm_venue(anchor["venue"]) == _norm_venue(r["venue"]))
                 faible = sim >= 0.92 and same_venue
                 if not (forte or faible):
                     continue

@@ -813,3 +813,63 @@ def test_linkcheck_respecte_son_budget_et_ne_reverifie_pas_trop_vite(con):
 
     assert asyncio.run(go(4))["checked"] == 4
     assert asyncio.run(go(100))["checked"] == 6          # les 4 premiers ne sont pas revus avant 2 jours
+
+
+# ================================================== l'API reste joignable pendant un cycle
+
+def test_la_phase_d_ecriture_du_refresh_ne_gele_pas_la_boucle(monkeypatch, base_temp):
+    """Régression constatée en production le 06/10/2026 : l'écriture du cycle (normalisation,
+    upsert, dédoublonnage) tournait DANS la boucle d'événements et /health restait muet
+    ~45 s. Elle doit tourner dans un fil à part."""
+    import time as _time
+
+    def lourde(*a, **k):
+        _time.sleep(0.8)                                   # travail synchrone qui occupe le CPU
+        return 0, 0, {"forte": 0, "faible": 0, "traduction": 0}, 0, {}
+
+    async def rien(*a, **k):
+        return []
+
+    monkeypatch.setattr(main, "_persist", lourde)
+    monkeypatch.setattr(sources, "aggregate", rien)
+    monkeypatch.setattr(main, "_build_fetchers", lambda con, now=None: ({}, {}))
+
+    async def go():
+        retards = []
+
+        async def battement():
+            last = asyncio.get_running_loop().time()
+            for _ in range(30):
+                await asyncio.sleep(0.05)
+                now = asyncio.get_running_loop().time()
+                retards.append(now - last - 0.05)
+                last = now
+
+        await asyncio.gather(main.refresh(), battement())
+        return max(retards)
+
+    assert asyncio.run(go()) < 0.35        # sans fil à part : ~0,8 s
+
+
+def test_dedup_rapide_et_identique_sur_un_gros_volume(con):
+    """Le dédoublonnage normalisait titres et lieux à CHAQUE comparaison (7 s pour 16 000
+    lignes en local). Même résultat, normalisation faite une fois par ligne."""
+    import time as _time
+    base = datetime(2026, 10, 10, 18, 0, tzinfo=UTC)
+    evs = []
+    for i in range(3000):
+        evs.append(db.Event(source="qfap", source_id=f"q{i}", title=f"Spectacle numéro {i} au théâtre {i % 40}",
+                            start=base + timedelta(minutes=(i % 90) * 7), lat=48.85 + (i % 50) / 1000, lon=2.35,
+                            venue=f"Salle {i % 40}"))
+    for i in range(0, 3000, 100):                         # 30 vrais doublons d'une autre source
+        evs.append(db.Event(source="ics:x", source_id=f"f{i}", title=f"Spectacle numéro {i} au théâtre {i % 40}",
+                            start=base + timedelta(minutes=(i % 90) * 7 + 5), lat=48.85 + (i % 50) / 1000, lon=2.35,
+                            venue=f"Salle {i % 40}"))
+    db.upsert_events(con, evs)
+    t = _time.perf_counter()
+    n = sources.dedup_inter_source(con, now=base - timedelta(days=1))
+    assert _time.perf_counter() - t < 8.0
+    # Résultat de référence de l'ALGORITHME D'AVANT l'optimisation sur ces mêmes données
+    # (mesuré le 06/10/2026 avec le code de master) : 14 forts + 16 faibles. Les « faibles »
+    # sont de vrais rapprochements de l'algorithme (titres à un chiffre près dans le même lieu).
+    assert (n["forte"], n["faible"], n["traduction"]) == (14, 16, 0)
