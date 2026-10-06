@@ -10,21 +10,31 @@ sont des mesures de CETTE machine, à comparer entre elles (régression), pas de
 Production le 06/10/2026 : environ 27 600 lignes d'événements, une ville active (valeur lue sur
 `/health`, `db.total`). Le benchmark par défaut génère 30 000 lignes pour rester proche de cet ordre.
 
-## Résultats (médiane / p95, ms)
+## Résultats (médiane / p95, ms) — une exécution du 06/10/2026
 
 | Chemin | 30 000 lignes | 100 000 lignes |
 |---|---|---|
-| `db.search` « ce soir, 2 km » | 52 / 77 | 145 / 205 |
-| `db.search` « week-end, 8 km » | 60 / 81 | 149 / 206 |
-| `db.search` semaine + catégorie | 59 / 82 | 198 / 228 |
-| `db.search` 90 jours, 8 km, gratuit | 139 / 224 | 497 / 627 |
-| `GET /api/events` (de bout en bout) | 95 / 184 | 200 / 284 |
-| `GET /api/cities` | 5,5 / 8,4 | 9,8 / 17 |
-| `GET /health` | 183 / 225 | 365 / 435 |
-| Ingestion (`upsert_events`) | 9 200 lignes/s | 9 600 lignes/s |
+| `db.search` « ce soir, 2 km » | 25 / 29 | 106 / 118 |
+| `db.search` « week-end, 8 km » | 33 / 38 | 126 / 151 |
+| `db.search` semaine + catégorie | 30 / 36 | 153 / 229 |
+| `db.search` 90 jours, 8 km, gratuit | 96 / 103 | 516 / 689 |
+| `GET /api/events` (de bout en bout) | 45 / 53 | 102 / 112 |
+| `GET /api/cities` | 4,3 / 5,7 | 3,9 / 5,2 |
+| `GET /health` | 130 / 180 | 248 / 264 |
+| Ingestion (`upsert_events`) | ~19 700 lignes/s | ~8 100 lignes/s |
+| **`dedup_inter_source`** (déduplication, tout le jeu) | **11,3 s** | **134 s** |
 
-Le temps est **linéaire** dans le nombre de lignes de la ville : environ 0,5 à 1,5 ms par millier de lignes
-pour une recherche courante.
+Le bruit entre deux exécutions sur ce poste est important (les mêmes recherches ont mesuré deux fois plus
+lent lors d'une exécution précédente, pendant que d'autres processus tournaient) : comparer des ordres de
+grandeur et des rapports, pas des millisecondes.
+
+* **La recherche est linéaire** dans le nombre de lignes de la ville : de l'ordre de 1 à 5 ms par millier de
+  lignes selon la fenêtre demandée.
+* **La déduplication est super-linéaire** (×12 pour ×3,3 lignes, soit un comportement proche du quadratique
+  sur ce jeu). C'est le vrai point de croissance : elle tourne dans le fil d'écriture du refresh (jamais dans
+  une requête utilisateur), donc elle allonge la durée d'un **cycle**, pas la latence de l'API. Le jeu synthétique
+  est dense (toutes les lignes dans ~13 km sur 90 jours, titres aléatoires) : à comparer avec la durée réelle des
+  cycles de production avant de conclure.
 
 ## `EXPLAIN QUERY PLAN`
 
@@ -35,7 +45,8 @@ SEARCH events USING INDEX idx_events_city_status (city_id=? AND status=?)
 SQLite choisit l'index `(city_id, status)` puis évalue la fenêtre de temps et la distance haversine sur
 chaque ligne de la ville. Les filtres temporels passent par `julianday()` (voir le piège de format dans
 `db.search`), donc ne peuvent pas utiliser `idx_events_start`. **Aucun index n'a été ajouté** : le plan est
-sain pour le volume actuel et rien n'a démontré qu'un index de plus aiderait.
+sain pour le volume actuel et rien n'a démontré qu'un index de plus aiderait. La sélection de la
+déduplication (`WHERE start >= ?`) utilise `idx_events_start`.
 
 ## Premier levier si la recherche devient trop lente (avant tout changement de SGBD)
 
