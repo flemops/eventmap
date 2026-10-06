@@ -40,3 +40,42 @@ serait pire que ne rien afficher.
 
 Rien de ce qui précède n'est à faire par l'agent : envoyer une demande d'autorisation
 au nom de Hamdy est un envoi externe, qui demande son accord explicite.
+
+## Sources écartées de la V1 (décisions de la phase 13, définitives pour cette V1)
+
+| Source | Raison | Réouverture seulement si… |
+|---|---|---|
+| GEA Open Data | cadre open data compatible, mais aucun jeu d'événements Jeddah actuel et concret identifié | un identifiant de jeu / une URL de téléchargement précis, avec événements actuels (dates + lieux) |
+| Plateforme nationale Open Data saoudienne | catalogue et API existent, aucun jeu d'événements Jeddah actuel identifié | un jeu précis avec licence, dates, lieux, fraîcheur et Jeddah vérifiables |
+| NEC Open Data | politique favorable, mais aucun fichier/flux public d'événements Jeddah | NEC publie un jeu événementiel public concret |
+| NEC National Calendar | accès réservé aux entités gouvernementales (Nafath) : non public, non contournable | l'accès n'est plus réservé aux entités gouvernementales |
+| Ticketmaster (Discovery API) | ni illimité ni librement réutilisable : quota 5 000 appels/jour, accès révocable, stockage limité, retrait exigible sous 24 h, réplication/monétisation restreintes | jamais pour la V1 (décision produit) |
+| MAHAM Mexpo | API publique mais aucune licence explicite de republication (« endpoint public » ≠ licence) | licence ou autorisation écrite explicite |
+| Pages publiques GEA/Enjoy, Details.sa, autres agendas web (dont Tathkara) | utiles pour découvrir, non ingérables sans licence/API/autorisation de stockage et de republication ; Tathkara ne sert que de **fixtures QA** (13.56) | licence, API ou autorisation écrite |
+| Red Sea Museum / Ministry of Culture | aucun flux public structuré avec droits de réutilisation (13.58) | un flux/API/jeu réutilisable apparaît |
+| Visit Saudi, Hayy Jameel (Art Jameel), webook.com | voir le tableau ci-dessus | accord écrit / API partenaire |
+
+## Quand rouvrir Jeddah (critères exacts)
+
+Une source n'entre en V1 que si **toutes** ces conditions sont vérifiées, noir sur blanc :
+
+1. **gratuite** durablement (aucune dépendance commerciale restrictive) ;
+2. **automatisable** (flux, API ou jeu téléchargeable ; aucun contournement d'accès) ;
+3. de **vrais événements actuels**, avec au minimum titre + date/heure + lieu/ville + URL source ;
+4. **Jeddah identifiable**, fraîcheur exploitable ;
+5. **droits explicites** de stockage et de republication (licence ouverte, ou autorisation écrite
+   couvrant collecte + stockage + republication). « Accessible publiquement » ne vaut pas « réutilisable ».
+
+Alors seulement : `authorization: ok` dans `feeds.yaml`, connecteur, source ajoutée à
+`cities.yaml: jeddah.sources`, puis `EVENTMAP_CITIES_ENABLED=jeddah` et `deploy/verify_prod.py`.
+Jusque-là : Jeddah éteinte, aucune fixture exposée comme donnée réelle, aucune métrique ni
+affirmation « Jeddah est en ligne » (README, portfolio, pages publiques).
+
+## Tests de régression 13.31 et 13.56 — fixtures QA, pas des sources
+
+`tests/test_phase13_regression.py` rejoue sans réseau des cas réels figés : PFL MENA 10 (annonce
+Jeddah du 19/06/2026, report officiel du 17/06, occurrence Riyad du 10/07 : l'ancienne occurrence ne
+reste jamais « active », la source officielle gagne, la provenance reste, Riyad n'est pas fusionnée
+avec Jeddah, un refresh tardif de l'agrégateur ne ressuscite rien) ; Dream Beach (série quotidienne
+07:00 → 03:00 en `Asia/Riyadh`, passage de minuit, aucune occurrence fantôme) et Mangrove Beach
+(uniquement les dates fournies).

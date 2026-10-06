@@ -155,9 +155,12 @@ Aucune ligne de Python n'est à modifier.
 > l'autorisez, par écrit, et par quel canal (flux, API partenaire) vous préférez que je procède ?
 > Merci d'avance.
 
-## Go / no-go Jeddah (mis à jour le 06/10/2026)
+## Go / no-go Jeddah (clôture de la phase 13, 06/10/2026)
 
-**NO-GO pour l'ouverture publique de Jeddah.** Critères du plan, un par un :
+**Verdict : architecture multi-ville = GO ; données Jeddah en production = NO-GO volontaire** tant
+qu'aucune source V1 admissible n'existe (critères exacts de réouverture : `docs/jeddah-sources.md`,
+section « Quand rouvrir Jeddah »). C'est une clôture réussie : le moteur unique sert Paris en
+production, et Jeddah est prête, éteinte, sans donnée factice. Critères du plan, un par un :
 
 | Critère | État vérifié |
 |---|---|
@@ -170,6 +173,7 @@ Aucune ligne de Python n'est à modifier.
 | Sources autorisées et traçables | **NON** — aucune source de Jeddah n'est autorisée (voir `docs/jeddah-sources.md`) |
 | Données Jeddah fraîches, horaires et prix fiables | **NON** — aucune donnée réelle |
 | Données réellement disponibles | **NON** |
+| Cas réels de régression (13.31 PFL MENA 10 reporté puis Riyad ; 13.56 Dream Beach / Mangrove Beach) | OK — `tests/test_phase13_regression.py`, 13 tests, fixtures QA uniquement, aucune ingestion |
 
 Ce n'est pas un échec d'ingénierie : afficher des données non autorisées, ou une carte vide présentée comme
 « rien ce soir », serait pire que ne pas ouvrir. Le GO devient possible dès qu'**une** source autorisée existe :
