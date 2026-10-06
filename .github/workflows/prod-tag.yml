@@ -35,3 +35,12 @@ jobs:
       # passé à un paramètre booléen du reusable workflow invalide tout le
       # fichier (0 job créé, "workflow file issue").
       tag_prod: ${{ inputs.tag_prod == true }}
+
+  post-deploy:
+    # Enchaîné ici plutôt que par `workflow_run` (qui ne s'est pas déclenché de façon fiable) :
+    # seulement si le tag `prod` vient réellement de bouger.
+    needs: ci
+    if: github.event_name == 'push' || inputs.tag_prod == true
+    uses: ./.github/workflows/post-deploy.yml
+    permissions:
+      contents: read
