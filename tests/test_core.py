@@ -528,9 +528,10 @@ def test_sitemap_liste_les_deux_pages(client):
     r = client.get("/sitemap.xml")
     assert r.status_code == 200
     assert "xml" in r.headers["content-type"]
-    assert r.text.count("<loc>") == 2
+    assert r.text.count("<loc>") == 4          # EN (défaut) + FR : / , /paris/carte , /fr/paris , /fr/paris/carte
     assert f"<loc>{main.SITE}/</loc>" in r.text
     assert f"<loc>{main.SITE}/paris/carte</loc>" in r.text
+    assert f"<loc>{main.SITE}/fr/paris/carte</loc>" in r.text
 
 
 def test_ancienne_url_carte_est_redirigee_definitivement(client):

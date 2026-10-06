@@ -82,6 +82,20 @@ window.EM_I18N = (() => {
              workshop: "Workshops", talk: "Talks", sport: "Sports", market: "Markets & festivals", other: "Experiences" },
       grp: { concerts: "Concerts", "culture-art": "Culture & Art", cinema: "Cinema", sports: "Sports",
              "food-markets": "Food & Markets", workshops: "Workshops", family: "Family", experiences: "Experiences" },
+      // Phase 15 : plage horaire, date précise, recherche, My Evening, agenda, partage.
+      // Interface volontairement en anglais (15.4) : fr et ar retombent sur ces textes.
+      search_events: "Search events", search_ph: "Title, venue, keyword", pick_date: "Pick a date", time_of_day: "Time of day",
+      any_time: "Any time", daytime: "Daytime", evening: "Evening", on_date: "{city} · {d}",
+      n_evening: "{n} in your evening", my_evening: "My Evening", my_evening_short: "Evening",
+      add_evening: "Add to My Evening", in_evening: "In My Evening", removed_evening: "Removed from My Evening",
+      evening_full: "My Evening holds {n} events at most", evening_empty: "Your evening is empty",
+      evening_hint: "Open an event and tap Add to My Evening to build your night.",
+      evening_note: "Sorted by start time. Travel time between venues is not estimated.",
+      evening_shared_note: "An evening shared with you. Sorted by start time; travel time is not estimated.",
+      clash_overlap: "Overlaps the next event", clash_same: "Same start time as the next event", remove: "Remove",
+      share_evening: "Share this evening", add_calendar: "Add to calendar", add_calendar_all: "Add all to calendar",
+      clear_evening: "Clear evening", keep_evening: "Keep as my evening", evening_kept: "Saved as your evening",
+      whatsapp: "WhatsApp",
     },
     ar: {
       tonight_in: "هذا المساء في {city}", now: "الآن", today: "هذا المساء", tomorrow: "غدًا",

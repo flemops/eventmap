@@ -29,6 +29,7 @@ from fastapi.staticfiles import StaticFiles
 import cities
 import cultures
 import db
+import ics
 import linkcheck
 import pipeline
 import registry
@@ -444,6 +445,8 @@ def api_events(
     lon: float | None = Query(None, ge=-180, le=180),
     radius: float = Query(2.0, gt=0, le=MAX_RADIUS_KM, description="km"),
     when: str = Query("today", pattern="^(now|today|tomorrow|weekend|week)$"),
+    date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$",
+                             description="jour précis AAAA-MM-JJ (calendrier de la ville) ; prime sur `when`"),
     price: str | None = Query(None, pattern="^(free|paid|free_conditional)$"),
     category: str | None = Query(None, max_length=30),
     culture: str | None = Query(None, max_length=200,
@@ -458,7 +461,13 @@ def api_events(
     lat = c.center[0] if lat is None else lat
     lon = c.center[1] if lon is None else lon
     now = datetime.now(timezone.utc)
-    start, end = _window(when, now, c)
+    if date:
+        try:
+            start, end = timewin.day_window(date, now, c.tz, cutoff=c.night_cutoff_hour)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+    else:
+        start, end = _window(when, now, c)
 
     cles, venues = _venues_pour_cultures(culture)
     cats = None
@@ -527,6 +536,54 @@ def api_event(event_id: int, city: str = Query(cities.DEFAULT_CITY, pattern="^[a
     for k in ("content_hash", "doublon_de", "dedup_reason"):
         r.pop(k, None)
     return r
+
+
+@app.post("/api/funnel", status_code=204)
+def api_funnel_hit(city: str = Query(cities.DEFAULT_CITY, pattern="^[a-z][a-z0-9-]{1,30}$"),
+                   step: str = Query(..., pattern="^[a-z_]{3,20}$")):
+    """Compte une étape d'usage (15.51). Aucune donnée personnelle n'est lue ni stockée :
+    ni IP, ni identifiant, ni en-tête. Étape ou ville inconnue : ignorée sans erreur."""
+    c = cities.active(city)
+    if c is not None and step in db.FUNNEL_STEPS:
+        with db.session() as con:
+            db.funnel_hit(con, datetime.now(c.tz).date().isoformat(), c.id, step)
+    return Response(status_code=204)
+
+
+@app.get("/api/funnel")
+def api_funnel(days: int = Query(7, ge=1, le=90), city: str | None = Query(None, pattern="^[a-z][a-z0-9-]{1,30}$")):
+    """Compteurs agrégés (jamais d'événement individuel) : répondent à « choisit-on une ville,
+    ouvre-t-on une fiche, enregistre-t-on, partage-t-on ? »."""
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
+    with db.session() as con:
+        return {"since": since, "city": city, "steps": db.funnel_stats(con, since, city)}
+
+
+MAX_ICS_EVENTS = 20
+
+
+@app.get("/api/calendar.ics")
+def api_calendar(city: str = Query(cities.DEFAULT_CITY, pattern="^[a-z][a-z0-9-]{1,30}$"),
+                 ids: str = Query(..., pattern=r"^\d{1,12}(,\d{1,12}){0,19}$",
+                                  description="identifiants séparés par des virgules (20 au plus)"),
+                 lang: str | None = Query(None, pattern="^[a-z]{2}$")):
+    """Un ou plusieurs événements au format iCalendar (« Ajouter à mon agenda », 15.43).
+    Aucune donnée personnelle : seuls les événements demandés, de la ville demandée."""
+    c = _city_or_404(city)
+    wanted = list(dict.fromkeys(int(x) for x in ids.split(",")))[:MAX_ICS_EVENTS]
+    with db.session() as con:
+        marks = ",".join("?" * len(wanted))
+        rows = [dict(r) for r in con.execute(
+            f"SELECT * FROM events WHERE city_id = ? AND doublon_de IS NULL AND id IN ({marks}) ORDER BY start",
+            [c.id, *wanted])]
+    if not rows:
+        raise HTTPException(404, "aucun événement")
+    for r in rows:
+        _localize(r, lang, c)
+    body = ics.calendar(rows, SITE, c.name(lang or c.default_language))
+    name = f"eventmap-{c.id}-{wanted[0]}.ics" if len(rows) == 1 else f"eventmap-{c.id}-soiree.ics"
+    return Response(content=body, media_type="text/calendar; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @app.get("/api/cities")

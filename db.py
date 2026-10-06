@@ -62,6 +62,16 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_start ON events (start);
 CREATE INDEX IF NOT EXISTS idx_events_geo   ON events (lat, lon);
 
+-- Entonnoir d'usage SANS donnée personnelle (15.51) : un compteur par jour, ville et étape.
+-- Ni identifiant, ni adresse IP, ni cookie, ni chemin : impossible de relier deux actions.
+CREATE TABLE IF NOT EXISTS funnel (
+    day     TEXT NOT NULL,
+    city_id TEXT NOT NULL,
+    step    TEXT NOT NULL,
+    n       INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, city_id, step)
+);
+
 CREATE TABLE IF NOT EXISTS source_health (
     source        TEXT PRIMARY KEY,
     last_count    INTEGER NOT NULL DEFAULT 0,
@@ -587,3 +597,23 @@ def mark_feed(con: sqlite3.Connection, url: str, *, ok: bool, error: str | None 
         con.execute("UPDATE feeds SET enabled = 0 WHERE url = ?", (url,))
         return True
     return False
+
+
+FUNNEL_STEPS = ("city_open", "pick_open", "filter_used", "event_open", "official_click", "directions_click",
+                "save", "share", "evening_add", "calendar_add")
+
+
+def funnel_hit(con: sqlite3.Connection, day: str, city_id: str, step: str) -> None:
+    con.execute("INSERT INTO funnel (day, city_id, step, n) VALUES (?, ?, ?, 1) "
+                "ON CONFLICT (day, city_id, step) DO UPDATE SET n = n + 1", (day, city_id, step))
+    con.commit()
+
+
+def funnel_stats(con: sqlite3.Connection, since_day: str, city_id: str | None = None) -> dict[str, int]:
+    q, args = "SELECT step, SUM(n) AS n FROM funnel WHERE day >= ?", [since_day]
+    if city_id:
+        q += " AND city_id = ?"
+        args.append(city_id)
+    out = dict.fromkeys(FUNNEL_STEPS, 0)
+    out.update({r["step"]: r["n"] for r in con.execute(q + " GROUP BY step", args)})
+    return out

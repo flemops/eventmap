@@ -402,3 +402,25 @@ passage du dépôt en public (CodeQL y est gratuit) — remettre `codeql.yml` (a
 `python` + `javascript-typescript`, passage hebdomadaire + PR). Contrôles de sécurité actifs entre-temps :
 Ruff (règles E/F/B), `pip-audit` (dépendances), gitleaks (secrets), alertes Dependabot activées sur le dépôt,
 et en-têtes/CSP vérifiés sur le service réel par `deploy/verify_prod.py`.
+
+## D21 — Phase 15 : « Tonight-first », ce qui est décidé
+
+**Décisions (07/10/2026).**
+* **Entrée = ce soir.** `home: carte` pour Paris : `/` ouvre directement « Tonight in Paris » (liste + carte). La page
+  « par culture » n'est plus l'entrée (15.22) ; les données culture restent en base et l'API.
+* **Interface en anglais** (15.4) : Paris passe en `languages: [en, fr]`, défaut `en` (`/fr/paris` reste servi). Les
+  textes nouveaux n'existent qu'en anglais ; fr/ar retombent dessus (`static/i18n.js`).
+* **Aucune distance sans GPS** (15.5/15.30) : le serveur calcule depuis le centre-ville, l'interface ne l'affiche
+  qu'après une géolocalisation explicitement demandée.
+* **Fenêtres horaires** (15.17), heure locale de la ville : *Daytime* 06:00–17:59, *Evening* 18:00–05:59 (filtre
+  client sur les événements chargés) ; *Tonight/Tomorrow/Weekend* restent calculés côté serveur avec la coupure de
+  nuit de la ville (`night_cutoff_hour`). Date précise : `GET /api/events?date=AAAA-MM-JJ` (aujourd'hui → +90 jours).
+* **My Evening** (15.37–15.42) : `localStorage` seulement, 12 événements au plus, trié par heure de début. Chevauchement
+  signalé **uniquement sur des durées connues** ; sans fin connue on ne signale que deux débuts identiques. Aucun temps
+  de trajet inventé. Partage : lien `?evening=id,id,…` (lecture seule) + texte lisible.
+* **Agenda** (15.43) : `GET /api/calendar.ics?ids=…` (20 événements au plus) ; pas de durée inventée ; une fin antérieure
+  au début (erreur de source) est ignorée.
+* **Entonnoir anonyme** (15.51) : `POST /api/funnel?step=…`, table `funnel(day, city_id, step, n)` — compteurs seuls,
+  aucune IP, aucun identifiant, aucun cookie ; `GET /api/funnel` expose les totaux.
+* **Hors périmètre volontaire** : photos d'événements (aucune source n'en fournit avec droit d'affichage vérifié,
+  15.24 — fallback sans image), estimation de trajet, comptes, personnalisation IA (15.54).

@@ -23,7 +23,21 @@
     radius: CITY.radius_options_km.includes(+params.get("r")) ? +params.get("r") : DEFAULT_RADIUS,
     free: params.has("price") ? params.get("price") === "free" : DEFAULT_FREE,
     category: params.get("cat") || "", located: false, me: null, view: "events",
+    tod: ["day", "eve"].includes(params.get("tod")) ? params.get("tod") : "",
+    date: /^\d{4}-\d{2}-\d{2}$/.test(params.get("date") || "") ? params.get("date") : "", q: (params.get("q") || "").slice(0, 60),
   };
+  /* Entonnoir d'usage SANS donnée personnelle (15.51) : un compteur anonyme par étape,
+     envoyé en « beacon » ; ni identifiant, ni cookie. Jamais bloquant. */
+  const track = (step) => { try { navigator.sendBeacon(api("/api/funnel", { step }), ""); } catch { /* ignoré */ } };
+  const TOD = { day: [6, 18], eve: [18, 6] };                 // Daytime 06:00–17:59, Evening 18:00–05:59 (heure de la ville)
+  const hourIn = (iso) => +new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: CITY.timezone }).format(new Date(iso));
+  const inTod = (iso, k) => { const [a, b] = TOD[k], h = hourIn(iso); return a < b ? h >= a && h < b : h >= a || h < b; };
+  const norm = (x) => String(x || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  /* Une source peut donner une fin AVANT le début : on la tient pour inconnue plutôt que d'afficher « 19:00 – 18:00 ». */
+  const fixEnd = (e) => { if (e && e.end && new Date(e.end) <= new Date(e.start)) e.end = null; return e; };
+  const refine = (evs) => evs.filter((e) =>
+    (!state.tod || inTod(e.start, state.tod)) &&
+    (!state.q || norm(`${e.title} ${e.venue || ""} ${e.description || ""}`).includes(norm(state.q))));
   let lastCount = 0;
 
   /* ---- carte --------------------------------------------------------------- */
@@ -113,7 +127,7 @@
     const price = priceText(e);
     const cat = I.catLabel(e.category);
     const note = statusNote(e);
-    const dist = e.distance_km != null ? fmtDist(e.distance_km) : "";
+    const dist = state.located && e.distance_km != null ? fmtDist(e.distance_km) : "";   // jamais « à X km » depuis le centre-ville
     const where = [e.venue ? `<span dir="auto">${esc(e.venue)}</span>` : "", dist ? `<span>${esc(dist)}</span>` : ""].filter(Boolean).join(" · ");
     el.innerHTML = `<button type="button" class="ev" data-id="${e.id}" aria-pressed="false">
       <span class="ev-time"><b>${esc(fmtTime(e.start))}</b>${day ? `<small>${esc(fmtDay(e.start))}</small>` : ""}</span>
@@ -166,7 +180,9 @@
     if (done) done.textContent = n ? t("show_n", { n }) : t("show_none");
   }
   function setHero() {
-    $("#h1").textContent = state.view === "saved" ? t("saved_view") : (I.raw("in_city", state.when) || "{city}").replace("{city}", cityName);
+    $("#h1").textContent = state.view === "saved" ? t("saved_view") : state.view === "evening" ? t("my_evening") :
+      state.date ? t("on_date", { city: cityName, d: new Date(`${state.date}T12:00:00Z`).toLocaleDateString(I.locale, { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }) }) :
+      (I.raw("in_city", state.when) || "{city}").replace("{city}", cityName);
   }
 
   function register(e, btn) { const r = byId.get(e.id); if (r) r.cards.push(btn); }
@@ -192,17 +208,19 @@
     list.appendChild(frag);
   }
 
+  let lastData = null;
   function render(data, fit) {
+    lastData = data;
     cluster.clearLayers();
     byId.clear();
     selectedId = null;
-    const evs = data.events;
+    const evs = state.view === "events" ? refine(data.events) : data.events;
     setCount(evs.length);
     dataNotice(data.data, evs.length);
     const bounds = [];
     for (const e of evs) {
       const m = L.marker([e.lat, e.lon], { icon: pinIcon(e), keyboard: false, riseOnHover: true });
-      m.on("click", () => select(e.id, { open: true }));
+      m.on("click", () => { track("event_open"); select(e.id, { open: true }); });
       if (canHover) {
         m.bindTooltip(`${esc(fmtTime(e.start))} · ${esc(e.title)}`, { direction: "top", offset: [0, -10], opacity: 1 });
         m.on("mouseover", () => { byId.get(e.id)?.cards.forEach((c) => c.classList.add("hover")); });
@@ -213,9 +231,10 @@
       bounds.push([e.lat, e.lon]);
     }
     if (!evs.length) { list.innerHTML = ""; list.appendChild(emptyState(data)); status.textContent = ""; return; }
-    renderList(evs);
+    if (state.view === "evening") eveningList(evs); else renderList(evs);
     status.innerHTML = state.view === "saved" ? esc(t("n_saved", { n: evs.length })) :
-      esc(t("n_events_in", { n: evs.length, r: state.radius })).replace(String(evs.length), `<strong>${evs.length}</strong>`);
+      state.view === "evening" ? esc(t("n_evening", { n: evs.length })) :
+      (state.located ? esc(t("n_events_in", { n: evs.length, r: state.radius })) : esc(t("n_events", { n: evs.length }))).replace(String(evs.length), `<strong>${evs.length}</strong>`);
     // Ne recadrer que sur une vraie nouvelle recherche : jamais après un pan/zoom manuel.
     if (fit && bounds.length) {
       const pad = { paddingTopLeft: [30, 30], paddingBottomRight: [30, 30 + sheetCover()], maxZoom: 15 };
@@ -231,8 +250,9 @@
     const degraded = st && !["ok", "unknown"].includes(st);
     const btns = [];
     let title, hint = "";
-    if (state.view === "saved") {
-      title = t("saved_empty"); hint = t("saved_hint");
+    if (state.view === "saved" || state.view === "evening") {
+      const eve = state.view === "evening";
+      title = t(eve ? "evening_empty" : "saved_empty"); hint = t(eve ? "evening_hint" : "saved_hint");
       btns.push([t("back_list"), () => { state.view = "events"; load(); }]);
     } else if (degraded) {
       // Les sources sont en retard : on ne prétend pas qu'il n'y a rien (la bannière le dit aussi).
@@ -276,6 +296,7 @@
   }
   list.addEventListener("click", (ev) => {
     const b = ev.target.closest("button.ev"); if (!b) return;
+    track(b.closest(".picks") ? "pick_open" : "event_open");
     select(+b.dataset.id, { open: true });
   });
   if (canHover) {          // survol d'une carte → son point s'agrandit sur la carte
@@ -318,6 +339,7 @@
     if (state.view !== "saved") return;
     const now = Date.now(), evs = [], keep = [];
     res.forEach((e, i) => {
+      fixEnd(e);
       if (e === undefined) { keep.push(ids[i]); return; }                    // réseau : on garde l'identifiant
       if (e === null) return;                                                  // disparu : on l'oublie
       const over = new Date(e.end || new Date(e.start).getTime() + 3 * 36e5) < now;
@@ -340,14 +362,14 @@
     const home = PATHS.home.replace(/\/$/, "");
     const share = `${location.origin}${home}/e/${e.id}`;
     const note = statusNote(e);
-    const saved = isSaved(e.id);
+    const saved = isSaved(e.id), inEve = readEve().includes(e.id);
     detail.innerHTML = `
       <button type="button" class="back"><span class="i-dir" aria-hidden="true">←</span> ${esc(t("back"))}</button>
       <h2 dir="auto" tabindex="-1">${esc(e.title)}</h2>
       ${note ? `<p><span class="tag warn">${esc(note)}</span></p>` : ""}
       <p class="d-when">${esc(fmtDayLong(e.start))} · <strong>${esc(fmtTime(e.start))}</strong>${e.end ? `<small> – ${esc(fmtTime(e.end))}</small>` : ""}</p>
       ${e.venue || e.address ? `<p class="d-where" dir="auto">${esc(e.venue || e.address)}${e.venue && e.address ? `<small>${esc(e.address)}</small>` : ""}</p>` : ""}
-      <p class="d-meta">${e.distance_km != null ? `<span>${esc(fmtDist(e.distance_km))}</span>` : ""}${price ? `<span class="tag ${e.price_type === "free" ? "free" : ""}">${esc(price)}</span>` : ""}<span>${esc(I.catLabel(e.category))}</span></p>
+      <p class="d-meta">${state.located && e.distance_km != null ? `<span>${esc(fmtDist(e.distance_km))}</span>` : ""}${price ? `<span class="tag ${e.price_type === "free" ? "free" : ""}">${esc(price)}</span>` : ""}<span>${esc(I.catLabel(e.category))}</span></p>
       ${e.description ? `<p class="desc" dir="auto">${esc(e.description)}</p>` : ""}
       <div class="actions">
         <a class="btn primary" target="_blank" rel="noopener" href="${esc(directionsUrl(e))}">${esc(t("directions"))}</a>
@@ -357,6 +379,9 @@
       <div class="actions second">
         <button class="btn ghost" type="button" id="share">${esc(t("share"))}</button>
         <button class="btn ghost" type="button" id="save" aria-pressed="${saved}">${hearth}<span>${esc(saved ? t("saved") : t("save"))}</span></button>
+        <button class="btn ghost" type="button" id="eve-add" aria-pressed="${inEve}"><span>${esc(inEve ? t("in_evening") : t("add_evening"))}</span></button>
+        <a class="btn ghost" id="cal" href="${esc(api("/api/calendar.ics", { ids: e.id, lang: LANG }))}" download>${esc(t("add_calendar"))}</a>
+        <a class="btn ghost" id="wa" target="_blank" rel="noopener" href="${esc(waUrl(`${e.title} — ${fmtDayLong(e.start)} ${fmtTime(e.start)}`, share))}">${esc(t("whatsapp"))}</a>
       </div>
       <p class="prov">${esc(t("source"))}${LANG === "fr" ? " : " : ": "}${esc(sourceLabel(e.source))}${e.last_seen ? ` · ${esc(t("updated"))} ${esc(new Date(e.last_seen).toLocaleDateString(I.locale, { day: "numeric", month: "short", timeZone: CITY.timezone }))}` : ""}</p>`;
     list.hidden = true; status.hidden = true; detail.hidden = false;
@@ -364,23 +389,124 @@
     if (sheet.dataset.state === "peek") sheetState("half", false);
     detail.querySelector("h2").focus({ preventScroll: true });
     detail.querySelector(".back").addEventListener("click", closeDetail);
-    detail.querySelector("#share").addEventListener("click", () => shareEvent(e, share));
+    detail.querySelector("#share").addEventListener("click", () => { track("share"); shareEvent(e, share); });
+    detail.querySelector("#cal").addEventListener("click", () => track("calendar_add"));
+    detail.querySelector("#wa").addEventListener("click", () => track("share"));
+    detail.querySelector(".actions:not(.second)").addEventListener("click", (ev) => {
+      const a = ev.target.closest("a"); if (!a) return;
+      track(a === ev.currentTarget.firstElementChild ? "directions_click" : "official_click");
+    });
+    const ea = detail.querySelector("#eve-add");
+    ea.addEventListener("click", () => {
+      const a = readEve(), i = a.indexOf(e.id);
+      if (i >= 0) a.splice(i, 1); else { if (a.length >= EVE_MAX) { toast(t("evening_full", { n: EVE_MAX })); return; } a.push(e.id); track("evening_add"); }
+      writeEve(a); syncEve();
+      const now = i < 0;
+      ea.setAttribute("aria-pressed", String(now)); ea.querySelector("span").textContent = now ? t("in_evening") : t("add_evening");
+      toast(now ? t("in_evening") : t("removed_evening"));
+    });
     const sv = detail.querySelector("#save");
     sv.addEventListener("click", () => {
-      const now = toggleSaved(e.id);
+      const now = toggleSaved(e.id); if (now) track("save");
       sv.setAttribute("aria-pressed", String(now)); sv.querySelector("span").textContent = now ? t("saved") : t("save");
       toast(now ? t("saved") : t("unsave"));
     });
     history.replaceState(null, "", `${location.pathname}${location.search}#e${e.id}`);
   }
-  async function shareEvent(e, url) {
+  const waUrl = (text, url) => `https://wa.me/?text=${encodeURIComponent(`${text}\n${url}`)}`;
+  /* Partage : la feuille système (Web Share) quand elle existe, sinon copie du lien/texte. */
+  async function shareOut({ title, text, url }) {
     try {
-      if (navigator.share) { await navigator.share({ title: e.title, url }); return; }
-      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(url);
-      else { const ta = document.createElement("textarea"); ta.value = url; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); const ok = document.execCommand("copy"); ta.remove(); if (!ok) throw new Error("copy"); }
+      if (navigator.share) { await navigator.share(text ? { title, text, url } : { title, url }); return; }
+      const out = text ? `${text}\n${url}` : url;
+      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(out);
+      else { const ta = document.createElement("textarea"); ta.value = out; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); const ok = document.execCommand("copy"); ta.remove(); if (!ok) throw new Error("copy"); }
       toast(t("copied"));
     } catch (err) { if (err && err.name !== "AbortError") toast(t("copy_failed")); }
   }
+  const shareEvent = (e, url) => shareOut({ title: e.title, url });
+
+  /* ---- My Evening : plan de soirée sans compte (localStorage), trié par heure de début -------- */
+  const EVE_KEY = `em_evening_${CITY.id}`, EVE_MAX = 12;
+  const readEve = () => { try { const a = JSON.parse(localStorage.getItem(EVE_KEY) || "[]"); return Array.isArray(a) ? a.filter(Number.isInteger) : []; } catch { return []; } };
+  const writeEve = (a) => { try { localStorage.setItem(EVE_KEY, JSON.stringify(a.slice(-EVE_MAX))); } catch { /* navigation privée : ignoré */ } };
+  function syncEve() {
+    const n = readEve().length, b = $("#eve-btn");
+    b.hidden = n === 0 && state.view !== "evening";
+    $("#eve-label").textContent = t("my_evening_short");
+    $("#eve-n").textContent = String(n);
+    b.setAttribute("aria-label", `${t("my_evening")} (${n})`);
+    b.setAttribute("aria-pressed", String(state.view === "evening"));
+  }
+  /* Chevauchement : seulement sur des durées CONNUES. Sans fin connue, on ne devine pas : on ne signale
+     que deux débuts identiques. */
+  function clash(a, b) {
+    if (a.end && new Date(b.start) < new Date(a.end)) return "overlap";
+    if (!a.end && a.start === b.start) return "same_start";
+    return "";
+  }
+  let eveShared = null;                       // identifiants d'un lien partagé (lecture seule), sinon null
+  async function showEvening(shared = null, { toggle = true } = {}) {
+    if (toggle && !shared && state.view === "evening") { state.view = "events"; eveShared = null; syncEve(); setHero(); return load(); }
+    state.view = "evening"; eveShared = shared; syncEve(); syncSaved(); syncControls(); setHero(); closeDetail(); say(""); showArea(false);
+    list.classList.add("busy"); status.textContent = t("loading");
+    const ids = shared || readEve();
+    const res = await Promise.all(ids.map((id) => fetch(api(`/api/events/${id}`, { lang: LANG })).then((r) => (r.ok ? r.json() : null)).catch(() => undefined)));
+    if (state.view !== "evening") return;
+    const now = Date.now(), evs = [], keep = [];
+    res.forEach((e, i) => {
+      fixEnd(e);
+      if (e === undefined) { keep.push(ids[i]); return; }
+      if (e === null) return;
+      const over = new Date(e.end || new Date(e.start).getTime() + 3 * 36e5) < now;
+      if (!over) { keep.push(ids[i]); if (e.lat != null) evs.push(e); }
+    });
+    if (!shared) { writeEve(keep); syncEve(); }
+    evs.sort((a, b) => new Date(a.start) - new Date(b.start));
+    list.classList.remove("busy");
+    render({ events: evs, data: { state: "ok" } }, true);
+  }
+  function eveningList(evs) {
+    const frag = document.createDocumentFragment();
+    const note = document.createElement("p");
+    note.className = "eve-note"; note.textContent = t(eveShared ? "evening_shared_note" : "evening_note");
+    frag.appendChild(note);
+    const ol = document.createElement("ol");
+    ol.className = "timeline";
+    evs.forEach((e, i) => {
+      const li = document.createElement("li");
+      const c = cardEl(e, { day: false });
+      register(e, c.firstElementChild);
+      li.appendChild(c.firstElementChild);
+      const end = e.end ? `<small class="tl-end">– ${esc(fmtTime(e.end))}</small>` : "";
+      const k = evs[i + 1] ? clash(e, evs[i + 1]) : "";
+      li.insertAdjacentHTML("beforeend", `<div class="tl-meta">${end}${k ? `<span class="tag warn">${esc(t(k === "overlap" ? "clash_overlap" : "clash_same"))}</span>` : ""}${eveShared ? "" : `<button type="button" class="tl-rm" data-rm="${e.id}">${esc(t("remove"))}</button>`}</div>`);
+      ol.appendChild(li);
+    });
+    frag.appendChild(ol);
+    const ids = evs.map((e) => e.id);
+    const url = `${location.origin}${PATHS.map}?evening=${ids.join(",")}`;
+    const text = `${t("my_evening")} — ${cityName}\n${evs.map((e) => `${fmtTime(e.start)}  ${e.title}${e.venue ? ` (${e.venue})` : ""}`).join("\n")}`;
+    const act = document.createElement("div");
+    act.className = "actions";
+    act.innerHTML = `<button class="btn primary" type="button" id="eve-share">${esc(t("share_evening"))}</button>
+      <a class="btn" id="eve-cal" download href="${esc(api("/api/calendar.ics", { ids: ids.join(","), lang: LANG }))}">${esc(t("add_calendar_all"))}</a>
+      ${eveShared ? `<button class="btn ghost" type="button" id="eve-keep">${esc(t("keep_evening"))}</button>` : `<button class="btn ghost" type="button" id="eve-clear">${esc(t("clear_evening"))}</button>`}`;
+    frag.appendChild(act);
+    list.innerHTML = "";
+    list.appendChild(frag);
+    $("#eve-share").addEventListener("click", () => { track("share"); shareOut({ title: t("my_evening"), text, url }); });
+    $("#eve-cal").addEventListener("click", () => track("calendar_add"));
+    const keep = $("#eve-keep"), clear = $("#eve-clear");
+    if (keep) keep.addEventListener("click", () => { writeEve(ids); syncEve(); toast(t("evening_kept")); showEvening(null, { toggle: false }); });
+    if (clear) clear.addEventListener("click", () => { writeEve([]); syncEve(); state.view = "events"; load(); });
+  }
+  list.addEventListener("click", (ev) => {
+    const rm = ev.target.closest("[data-rm]"); if (!rm) return;
+    writeEve(readEve().filter((x) => x !== +rm.dataset.rm)); syncEve();
+    showEvening(null, { toggle: false });          // re-rendu de la liste restante
+  });
+  $("#eve-btn").addEventListener("click", () => showEvening());
   function closeDetail() {
     if (detail.hidden) return;
     detail.hidden = true; list.hidden = false; status.hidden = false;
@@ -431,7 +557,9 @@
   let ctrl = null;
   function syncUrl() {
     const q = new URLSearchParams();
-    if (state.when !== "today") q.set("when", state.when);
+    if (state.date) q.set("date", state.date); else if (state.when !== "today") q.set("when", state.when);
+    if (state.tod) q.set("tod", state.tod);
+    if (state.q) q.set("q", state.q);
     if (state.free !== DEFAULT_FREE) q.set("price", state.free ? "free" : "all");
     if (state.radius !== DEFAULT_RADIUS) q.set("r", state.radius);
     if (state.category) q.set("cat", state.category);
@@ -443,7 +571,7 @@
     if (ctrl) ctrl.abort();
     ctrl = new AbortController();
     const myCtrl = ctrl;
-    state.view = "events"; syncSaved(); setHero(); syncControls(); showArea(false);
+    state.view = "events"; eveShared = null; syncSaved(); syncEve(); setHero(); syncControls(); showArea(false);
     closeDetail();
     status.textContent = t("loading");
     // Un rafraîchissement ne vide jamais l'écran : la dernière liste saine reste, estompée,
@@ -452,12 +580,14 @@
     else list.innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div>';
     syncUrl();
     const q = { lat: state.lat, lon: state.lon, radius: state.radius, when: state.when, lang: LANG };
+    if (state.date) q.date = state.date;
     if (state.free) q.price = "free";
     if (state.category) q.category = state.category;
     try {
       const r = await fetch(api("/api/events", q), { signal: myCtrl.signal });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
+      data.events.forEach(fixEnd);
       list.classList.remove("busy");
       render(data, fit);
       drawMe();
@@ -478,15 +608,18 @@
   function setFilters(patch) { Object.assign(state, patch); syncControls(); load(); }
 
   /* ---- contrôles : barre rapide + panneau Filtres, toujours synchronisés ------------------- */
-  const filtersN = () => (["tomorrow", "week"].includes(state.when) ? 1 : 0) + (state.category ? 1 : 0) + (state.radius !== DEFAULT_RADIUS ? 1 : 0);
-  const isDefault = () => state.when === "today" && state.free === DEFAULT_FREE && !state.category && state.radius === DEFAULT_RADIUS;
+  const filtersN = () => (["tomorrow", "week"].includes(state.when) || state.date ? 1 : 0) + (state.category ? 1 : 0) + (state.radius !== DEFAULT_RADIUS ? 1 : 0) + (state.tod ? 1 : 0) + (state.q ? 1 : 0);
+  const isDefault = () => state.when === "today" && !state.date && !state.tod && !state.q && state.free === DEFAULT_FREE && !state.category && state.radius === DEFAULT_RADIUS;
   const seg = (sel, items, pressed, attr) => {
     const root = $(sel);
     root.innerHTML = items.map(([v, label]) => `<button type="button" class="chip" data-${attr}="${esc(v)}" aria-pressed="${pressed(v)}">${esc(label)}</button>`).join("");
   };
   function syncControls() {
     const saved = state.view === "saved";
-    document.querySelectorAll("[data-when]").forEach((b) => b.setAttribute("aria-pressed", String(!saved && b.dataset.when === state.when)));
+    document.querySelectorAll("[data-when]").forEach((b) => b.setAttribute("aria-pressed", String(!saved && !state.date && b.dataset.when === state.when)));
+    document.querySelectorAll("#fp-tod [data-tod]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tod === state.tod)));
+    $("#fp-date").value = state.date;
+    if (document.activeElement !== $("#fp-search")) $("#fp-search").value = state.q;
     $("#free").setAttribute("aria-pressed", String(state.free));
     document.querySelectorAll("#fp-price [data-price]").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.price === "free") === state.free)));
     document.querySelectorAll("#fp-radius [data-radius]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.radius === state.radius)));
@@ -507,6 +640,11 @@
   $("#fp-l-cat").textContent = t("categories");
   $("#fp-l-radius").textContent = t("distance");
   document.querySelectorAll("#quick [data-when]").forEach((b) => { b.textContent = b.dataset.when === "weekend" ? t("weekend_s") : t(b.dataset.when); });
+  $("#fp-l-search").textContent = t("search_events");
+  $("#fp-search").placeholder = t("search_ph");
+  $("#fp-l-date").textContent = t("pick_date");
+  $("#fp-l-tod").textContent = t("time_of_day");
+  seg("#fp-tod", [["", t("any_time")], ["day", t("daytime")], ["eve", t("evening")]], () => "false", "tod");
   seg("#fp-when", WHENS.map((w) => [w, w === "weekend" ? t("weekend_s") : t(w)]), () => "false", "when");
   seg("#fp-price", [["all", t("all")], ["free", t("free")]], () => "false", "price");
   seg("#fp-radius", CITY.radius_options_km.map((k) => [k, k === CITY.max_radius_km ? t("all_city") : `${k} ${t("km")}`]), () => "false", "radius");
@@ -517,13 +655,25 @@
   $("#grab").setAttribute("aria-label", t("sheet_expand"));
 
   document.addEventListener("click", (ev) => {
-    const w = ev.target.closest("[data-when]"); if (w) { setFilters({ when: w.dataset.when }); return; }
+    const w = ev.target.closest("[data-when]"); if (w) { track("filter_used"); setFilters({ when: w.dataset.when, date: "" }); return; }
+    const td = ev.target.closest("#fp-tod [data-tod]"); if (td) { track("filter_used"); setFilters({ tod: td.dataset.tod }); return; }
     const p = ev.target.closest("#fp-price [data-price]"); if (p) { setFilters({ free: p.dataset.price === "free" }); return; }
     const r = ev.target.closest("#fp-radius [data-radius]"); if (r) { setFilters({ radius: +r.dataset.radius }); return; }
     const c = ev.target.closest("#fp-cats [data-cat]"); if (c) { setFilters({ category: c.dataset.cat }); }
   });
-  $("#free").addEventListener("click", () => setFilters({ free: !state.free }));
-  $("#fp-reset").addEventListener("click", () => setFilters({ when: "today", free: DEFAULT_FREE, category: "", radius: DEFAULT_RADIUS }));
+  $("#free").addEventListener("click", () => { track("filter_used"); setFilters({ free: !state.free }); });
+  $("#fp-reset").addEventListener("click", () => setFilters({ when: "today", date: "", tod: "", q: "", free: DEFAULT_FREE, category: "", radius: DEFAULT_RADIUS }));
+  /* Date précise : bornes = aujourd'hui → +90 jours, calendrier de la VILLE (pas celui du navigateur). */
+  const todayLocal = new Intl.DateTimeFormat("en-CA", { timeZone: CITY.timezone }).format(new Date());
+  const dateEl = $("#fp-date");
+  dateEl.min = todayLocal; dateEl.max = new Date(new Date(`${todayLocal}T12:00:00Z`).getTime() + 90 * 864e5).toISOString().slice(0, 10);
+  dateEl.addEventListener("change", () => { if (dateEl.value) { track("filter_used"); setFilters({ date: dateEl.value }); } else setFilters({ date: "" }); });
+  /* Recherche : filtre le texte des événements déjà chargés (titre, lieu, description), sans requête. */
+  let qTimer = null;
+  $("#fp-search").addEventListener("input", (ev) => {
+    clearTimeout(qTimer);
+    qTimer = setTimeout(() => { state.q = ev.target.value.trim().slice(0, 60); syncControls(); syncUrl(); if (lastData) render(lastData, false); }, 200);
+  });
 
   /* Catégories : seulement celles qui ont de vrais événements (13.23). */
   fetch(api("/api/categories")).then((r) => r.json()).then((c) => {
@@ -659,8 +809,10 @@
 
   // Quand on arrive sur un lien d'événement partagé (#e123), l'ouvrir une fois la liste chargée.
   const hash = /^#e(\d+)$/.exec(location.hash);
-  syncControls(); syncSaved(); setHero();
-  load();
+  syncControls(); syncSaved(); syncEve(); setHero();
+  track("city_open");
+  const sharedEve = (/^\d{1,12}(,\d{1,12}){0,11}$/.exec(params.get("evening") || "") || [""])[0];
+  if (sharedEve) showEvening(sharedEve.split(",").map(Number)); else load();
   if (hash) {
     const want = +hash[1];
     const iv = setInterval(() => { if (byId.has(want)) { clearInterval(iv); select(want, { open: true }); } }, 300);
