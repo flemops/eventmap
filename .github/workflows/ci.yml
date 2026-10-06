@@ -8,6 +8,8 @@ on:
   pull_request:
   push:
     branches: [master]     # alimente le badge du README
+  schedule:
+    - cron: "41 3 * * *"   # 14.12 : validation quotidienne du dépôt (tests, fixtures de contrat, schéma) sans toucher à la production
   workflow_dispatch:
 
 permissions:

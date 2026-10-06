@@ -44,6 +44,16 @@ jobs:
                --retry-all-errors "$BASE/health" -o disponibilite.json
           jq -e '.status' disponibilite.json
 
+      - name: Parcours publics (pages + API de chaque ville allumée)
+        run: |
+          curl --fail --silent --show-error --max-time 20 --retry 2 --retry-delay 10 -o /dev/null "$BASE/"
+          curl --fail --silent --show-error --max-time 20 -o /dev/null "$BASE/sitemap.xml"
+          for c in $(curl --fail --silent --max-time 20 "$BASE/api/cities" | jq -r '.cities[].id'); do
+            echo "ville : $c"
+            curl --fail --silent --show-error --max-time 20 -o /dev/null "$BASE/$c/carte"
+            curl --fail --silent --show-error --max-time 30 --retry 2 --retry-delay 10                  "$BASE/api/events?city=$c&when=week&limit=1" | jq -e '.events | type == "array"'
+          done
+
       - name: Données (/health?strict=1)
         id: donnees
         run: |
