@@ -18,4 +18,9 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+    ignore:
+      # Dépôt privé : Dependabot n'y a pas accès (« Repository not found », la mise à jour échoue
+      # entièrement). Le SHA de ci-templates dans prod-tag.yml se met à jour À LA MAIN : relire le
+      # diff du gabarit puis changer le SHA (docs/release.md).
+      - dependency-name: "flemops/ci-templates"
     open-pull-requests-limit: 3

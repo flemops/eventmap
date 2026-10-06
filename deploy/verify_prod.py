@@ -17,6 +17,7 @@ import urllib.request
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+sys.stdout.reconfigure(encoding="utf-8")   # Windows : la console cp1252 ne sait pas écrire « → »
 P = "https://eventmap.hamdy-tabsissi.com"
 RES = []
 
@@ -150,7 +151,7 @@ urls = urls[:12]
 dead = []
 for u in urls:
     st, *_ = req(u, "GET", timeout=20)
-    if st not in (200, 301, 302, 403):
+    if st not in (200, 301, 302, 307, 308, 403):   # 307/308 : redirections légitimes (OpenAgenda)
         dead.append((u, st))
     time.sleep(0.5)
 check("liens externes d'événements (échantillon)", not dead, f"{len(urls)} testés, KO: {dead}")
