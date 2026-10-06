@@ -28,6 +28,11 @@ CATS = ["music", "theatre", "exhibition", "film", "dance", "family", "other"]
 BUDGET_MS = {"search": 250.0, "api_events": 400.0, "api_cities": 50.0, "health": 400.0}
 
 
+def _title(rnd: random.Random) -> str:
+    """Titres distincts (3 mots aléatoires) : des titres tous semblables ferait du dédoublonnage un pire cas irréaliste."""
+    return " ".join("".join(rnd.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(rnd.randint(4, 9))) for _ in range(3))
+
+
 def build(path: str, rows: int, seed: int = 7) -> float:
     import db
     rnd = random.Random(seed)
@@ -39,7 +44,7 @@ def build(path: str, rows: int, seed: int = 7) -> float:
             source=rnd.choice(["qfap", "ficep", "bataclan", "openagenda-idf"]),
             source_id=f"bench-{i}", start=start,
             end=start + timedelta(hours=rnd.choice([2, 3, 6, 8])),
-            title=f"Événement synthétique {i}", venue=f"Lieu {i % 400}",
+            title=_title(rnd), venue=f"Lieu {i % 400}",
             lat=CENTER[0] + rnd.uniform(-0.06, 0.06), lon=CENTER[1] + rnd.uniform(-0.09, 0.09),
             price_type=rnd.choice(["free", "paid", "unknown"]), category=rnd.choice(CATS),
             city_id="paris"))
@@ -101,6 +106,15 @@ def main() -> int:
         ).fetchall()
         for r in plan:
             print("  ", r["detail"])
+
+        print("\nEXPLAIN QUERY PLAN (sélection de la déduplication : WHERE start >= ?) :")
+        for r in con.execute("EXPLAIN QUERY PLAN SELECT id, source, title, start, lat, lon FROM events WHERE start >= ?",
+                             (now.isoformat(),)).fetchall():
+            print("  ", r["detail"])
+        import sources
+        t = time.perf_counter()
+        sources.dedup_inter_source(con, now=now)
+        print(f"dedup_inter_source sur {args.rows} lignes : {time.perf_counter() - t:.2f} s")
         con.close()
 
         from fastapi.testclient import TestClient
