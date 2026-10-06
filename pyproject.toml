@@ -10,6 +10,7 @@ requires-python = ">=3.10"
 pythonpath = ["."]          # `pytest` nu fonctionne (avant : seul `python -m pytest` mettait la racine sur sys.path)
 testpaths = ["tests"]
 addopts = "-ra"
+markers = ["e2e: parcours dans un navigateur réel (Playwright) ; ignorés si Playwright est absent"]
 
 [tool.coverage.run]
 source = ["."]

@@ -17,6 +17,7 @@ l'affiche à chaque exécution, et la couverture est mesurée (`pytest --cov`, p
 | Santé / alertes | `/health` toujours 200, `?strict=1` en 503, chaque alerte nommée, version déployée | `test_chaque_alerte_*`, `test_health_*` |
 | Rendu | pages, SEO, JSON-LD, échappement des injections | `test_pages_*`, `test_injection_*` |
 | Régression métier | cas réels de la phase 13 (report officiel, séries, passage 23h59/00h00) | `tests/test_phase13_regression.py` |
+| **Navigateur réel (E2E)** | première visite → Tonight, filtres Free/recherche, fiche + Échap, My Evening (chevauchement, partage, `.ics`), favoris persistants, aucun débordement et **axe-core sans violation grave** à 1440/1280/1024/390 px | `tests/e2e/` (`e2e.yml`, Chromium via Playwright, base jetable) |
 | Déploiement (service réel) | **hors pytest**, lecture seule : `deploy/verify_prod.py` (+ `post-deploy.yml`) | `deploy/verify_prod.py` |
 | Performance | **hors pytest** : `deploy/bench.py` | `docs/performance.md` |
 
@@ -26,5 +27,8 @@ l'affiche à chaque exécution, et la couverture est mesurée (`pytest --cov`, p
   des propriétés (« aucun événement d'une autre ville »), ou une fenêtre fixe (`WIN` des tests de contrat).
 * Une fixture de contrat se renouvelle en recapturant un enregistrement (même requête que le connecteur) :
   le diff montre exactement ce que la source a changé.
-* **Trou connu** : le rendu navigateur (carte Leaflet, clavier, responsive) n'a pas de test automatisé ; il
-  se vérifie à la main avant livraison.
+* **E2E** : `pip install -r requirements-dev.txt -r requirements-e2e.txt && playwright install chromium && pytest tests/e2e`.
+  Ignoré quand Playwright est absent (la porte de qualité `ci.yml` ne l'installe pas) ; `e2e.yml` le rejoue quand
+  l'interface change et une fois par semaine. Les événements d'essai sont préfixés `[E2E]` : aucune donnée réelle.
+* **Trou connu** : les parcours « première visite → Jeddah » (15.58) n'existent pas tant que Jeddah est éteinte ;
+  la comparaison visuelle au pixel et le lecteur d'écran réel restent manuels (Phase 12).
