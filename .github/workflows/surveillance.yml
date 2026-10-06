@@ -69,6 +69,7 @@ jobs:
         if: failure() && steps.donnees.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}     # pas de checkout : gh doit savoir sur quel depot agir
         run: |
           gh label create alerte-donnees --color B60205 --description "Alerte de données EventMap" 2>/dev/null || true
           n=$(gh issue list --label alerte-donnees --state open --json number --jq '.[0].number // empty')
@@ -82,6 +83,7 @@ jobs:
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}     # pas de checkout : gh doit savoir sur quel depot agir
         run: |
           for n in $(gh issue list --label alerte-donnees --state open --json number --jq '.[].number'); do
             gh issue close "$n" --comment "Retour à la normale ($(date -u +%FT%TZ)) : /health?strict=1 répond 200, aucune alerte."
