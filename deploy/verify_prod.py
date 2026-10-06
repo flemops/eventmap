@@ -1,11 +1,19 @@
 """Vérification du service RÉEL après un déploiement (aucun accès à la VM : tout est lu en HTTP).
 
     python deploy/verify_prod.py        # code de sortie 1 si une vérification échoue
+    EXPECTED_COMMIT=<sha> python deploy/verify_prod.py   # + vérifie que CE commit est celui en service
 
 Contrôle /health (latence, refresh, sources, alertes, villes), les fenêtres et le fuseau, les filtres,
 les routes et deep links, les pages (canonique, JSON-LD, CSP, assets versionnés), un échantillon de
 liens externes, et que les villes éteintes sont bien introuvables. Nécessite `zoneinfo` + tzdata."""
-import json, re, statistics, sys, time, urllib.error, urllib.request
+import json
+import os
+import re
+import statistics
+import sys
+import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -45,6 +53,13 @@ c = h["cities"]["paris"]
 now = datetime.now(timezone.utc)
 last = datetime.fromisoformat(h["refresh"]["last_run"]) if h["refresh"]["last_run"] else None
 check("status ok", h["status"] == "ok", h["status"])
+expected = os.environ.get("EXPECTED_COMMIT", "").strip()      # fourni par la CI post-déploiement (SHA du tag prod)
+rel = h.get("release") or {}
+if expected:
+    check("version déployée = commit attendu", bool(rel.get("commit")) and expected.startswith(rel["commit"]),
+          f'en service {rel.get("commit")}, attendu {expected[:12]}')
+else:
+    print(f'INFO commit en service : {rel.get("commit")} · Python {rel.get("python")} (EXPECTED_COMMIT non fourni : pas de comparaison)')
 check("refresh récent (< 7 h)", bool(last) and (now - last).total_seconds() < 7 * 3600, str(h["refresh"]["last_run"]))
 check("ingestion Paris : sources fraîches", c["data"]["state"] == "ok", f'{c["data"]["state"]} {[(s["id"], s["data_age_h"]) for s in c["data"]["sources"]]}')
 check("aucune anomalie Paris", c["anomalies"] == [], str(c["anomalies"]))

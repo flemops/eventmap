@@ -17,7 +17,7 @@ import json
 import logging
 import re
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlsplit
 from urllib.robotparser import RobotFileParser
@@ -25,7 +25,7 @@ from urllib.robotparser import RobotFileParser
 import httpx
 
 from db import Event
-from sources import PoliteClient, USER_AGENT, clean_html, normalize_category, stable_id
+from sources import USER_AGENT, PoliteClient, clean_html, normalize_category, stable_id
 
 log = logging.getLogger("eventmap.discover")
 

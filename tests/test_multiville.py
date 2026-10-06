@@ -109,7 +109,7 @@ def test_config_invalide_refusee():
         cities._parse(bad)
     bad = json.loads(json.dumps(base))
     bad["cities"]["paris"]["timezone"] = "Mars/Olympus"
-    with pytest.raises(Exception):
+    with pytest.raises((KeyError, ValueError)):
         cities._parse(bad)
 
 
@@ -769,6 +769,7 @@ def _client_with(handler):
 
 def test_verdict_d_un_lien():
     import httpx
+
     import linkcheck
 
     async def go():
@@ -782,6 +783,7 @@ def test_verdict_d_un_lien():
 
 def test_lien_mort_masque_les_boutons_mais_garde_la_trace(client, base_temp, jeddah_on):
     import httpx
+
     import linkcheck
     now = datetime.now(UTC) + timedelta(hours=2)
     _put(base_temp, [_jed("Gala", now, url="https://exemple.test/gone", booking_url="https://exemple.test/gone"),
@@ -807,6 +809,7 @@ def test_lien_mort_masque_les_boutons_mais_garde_la_trace(client, base_temp, jed
 
 def test_linkcheck_respecte_son_budget_et_ne_reverifie_pas_trop_vite(con):
     import httpx
+
     import linkcheck
     t = datetime.now(UTC) + timedelta(hours=3)
     db.upsert_events(con, [_jed(f"E{i}", t + timedelta(minutes=i), source_id=str(i), url=f"https://exemple.test/{i}") for i in range(10)])
@@ -1015,6 +1018,7 @@ def _transport(pages, sitemap):
 
 def test_sitemap_filtre_les_pages_passees_et_les_copies_en_anglais():
     import httpx
+
     import sources_jsonld
     sm = "".join(f"<url><loc>https://salle.test{p}</loc></url>" for p in (
         "/evenement/a2h_2026-11-20", "/evenement/a2h_2026-11-20_en", "/evenement/ancien_2020-01-01", "/programmation"))
@@ -1037,6 +1041,7 @@ def test_sitemap_filtre_les_pages_passees_et_les_copies_en_anglais():
 
 def test_une_panne_silencieuse_du_parseur_n_est_pas_une_liste_vide():
     import httpx
+
     import sources_jsonld
 
     async def run(sitemap, page_html, status=200):
@@ -1109,6 +1114,7 @@ def test_ods_plafond_de_creneaux_par_evenement():
 
 def test_ods_pagination_et_pannes_non_masquees():
     import httpx
+
     import sources_ods
     pages = {0: [{**_REC, "uid": str(i)} for i in range(100)], 100: [{**_REC, "uid": "last"}]}
 
@@ -1125,7 +1131,6 @@ def test_ods_pagination_et_pannes_non_masquees():
         return httpx.Response(200, json={"total_count": 101, "results": pages.get(off, [])})
 
     # fenêtre d'ingestion = maintenant → on déplace les créneaux de la fixture dans le futur proche
-    import copy
     fut = (datetime.now(UTC) + timedelta(days=3)).isoformat()
     for lst in pages.values():
         for r in lst:

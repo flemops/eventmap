@@ -1,13 +1,11 @@
 """Tests unitaires sans réseau : parsing, fenêtres temporelles, dédoublonnage,
 idempotence de l'upsert, recherche géo. `pytest -q` depuis la racine."""
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-import asyncio
-
 import pytest
-
 from fastapi import HTTPException
 
 import cultures

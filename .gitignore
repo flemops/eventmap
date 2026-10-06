@@ -19,3 +19,9 @@ __pycache__/
 # Fichiers de travail
 *.log
 _smoke.py
+
+# Sorties de qualité
+.coverage
+coverage.xml
+sbom*.json
+.ruff_cache/

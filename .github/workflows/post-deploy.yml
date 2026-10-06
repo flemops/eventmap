@@ -1,0 +1,48 @@
+name: Vérification post-déploiement
+
+# Le déploiement est PULL côté VM (aucun secret d'accès ici) : après `prod-tag.yml`, la VM récupère le
+# tag `prod` à son rythme. Ce workflow attend que CE commit soit réellement en service (/health.release.commit),
+# puis rejoue deploy/verify_prod.py — lecture seule, aucune écriture, aucun accès à la VM. Un déploiement
+# n'est « réussi » que s'il passe ici ; sinon le workflow échoue et GitHub prévient par courriel.
+# Rollback : déplacer le tag `prod` sur le commit précédent (docs/release.md).
+
+on:
+  workflow_run:
+    workflows: ["Validation + tag prod"]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: post-deploy
+  cancel-in-progress: true
+
+jobs:
+  verifier:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EXPECTED_COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ env.EXPECTED_COMMIT }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Attendre que le commit soit en service (max 20 min)
+        run: |
+          for i in $(seq 1 40); do
+            live=$(curl -fsS --max-time 20 https://eventmap.hamdy-tabsissi.com/health | jq -r '.release.commit // "?"') || live="?"
+            echo "essai $i : en service=$live attendu=${EXPECTED_COMMIT:0:12}"
+            [ "$live" = "${EXPECTED_COMMIT:0:12}" ] && exit 0
+            sleep 30
+          done
+          echo "Le commit attendu n'est pas en service après 20 min (VM n'a pas tiré le tag prod ?)" >&2
+          exit 1
+      - name: Vérifications sur le service réel (lecture seule)
+        run: python deploy/verify_prod.py

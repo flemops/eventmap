@@ -21,11 +21,11 @@ from __future__ import annotations
 import html
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 
 import cities
 import db

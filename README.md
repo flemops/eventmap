@@ -1,81 +1,219 @@
-# EventMap — Paris ce soir (moteur multi-ville)
+# EventMap
 
-> Depuis le 06/10/2026 le moteur sert plusieurs villes (`cities.yaml`). Paris est la ville de
-> référence ; Jeddah est construite mais **éteinte** tant qu'aucune source n'est autorisée.
-> Architecture, exploitation, interrupteurs, retour arrière, ajout d'une ville :
-> [`docs/multi-ville.md`](docs/multi-ville.md) · sources de Jeddah : [`docs/jeddah-sources.md`](docs/jeddah-sources.md).
+[![CI](https://github.com/flemops/eventmap/actions/workflows/ci.yml/badge.svg)](https://github.com/flemops/eventmap/actions/workflows/ci.yml)
+[![Prod gate](https://github.com/flemops/eventmap/actions/workflows/prod-tag.yml/badge.svg)](https://github.com/flemops/eventmap/actions/workflows/prod-tag.yml)
 
-<!-- déploiement continu (pull-based) actif depuis le 09/09/2026, rollback vérifié, script durci -->
+**"What should I do tonight?" — one answer, not a catalogue.** EventMap aggregates public cultural
+events, de-duplicates them across sources, and opens on *tonight, within 2 km of you* instead of an
+endless list. It is built as a small, operable production service: polite multi-source ingestion,
+reversible de-duplication, strict health checks, and a CI gate in front of every deploy.
 
+[**Live demo**](https://eventmap.hamdy-tabsissi.com) ·
+[API docs](https://eventmap.hamdy-tabsissi.com/api/docs) ·
+[Health](https://eventmap.hamdy-tabsissi.com/health) ·
+[Architecture](#architecture) ·
+[Run locally](#run-it-locally)
 
-Agrégateur d'événements **Paris intra-muros**, conçu contre la paralysie du
-choix : **une vue « ce soir, à 2 km » par défaut, jamais un catalogue.**
+> Documentation under [`docs/`](docs/) is written in French (the product and its sources are French);
+> this README is the English entry point.
 
-## Ce que ça fait
+## What makes it technically interesting
 
-- Rapatrie « Que faire à Paris » (Ville de Paris, ODbL) toutes les 6 h —
-  ~2 500 événements à venir, tous géolocalisés — et éclate chaque créneau en
-  une ligne.
-- Expose `GET /api/events?lat&lon&radius&when=today|tomorrow|weekend|week`
-  avec filtres prix et catégorie. Recherche géo par haversine en SQL.
-- Sert un front mobile-first (Leaflet + OpenStreetMap, zéro build, zéro clé)
-  centré sur Châtelet, rayon 1 à 8 km (« Tout Paris »).
-- **Tolère les pannes** : si la source tombe, l'ancien contenu reste servi
-  et `/health` passe en `degraded` au lieu de planter.
+| Highlight | Proof |
+|---|---|
+| **Fault tolerance with last-known-good data**: a failing or silent source never empties the map | decisions [D6](docs/decisions.md), [D7](docs/decisions.md) · `test_invariant_last_known_good_*` |
+| **Strict health, availability ≠ data quality**: `/health` is always 200; `/health?strict=1` returns 503 with named alerts | [`main.py`](main.py) `compute_alerts` · [`surveillance.yml`](.github/workflows/surveillance.yml) opens/closes a GitHub issue |
+| **Multi-source ingestion**: iCalendar (RRULE/EXDATE), JSON-LD, Opendatasoft, one open-data API; per-source cadence, timeout, retries, rate limit | [`registry.py`](registry.py), [`feeds.yaml`](feeds.yaml), [`sources*.py`](sources.py) |
+| **Reversible cross-source de-duplication** (strong / weak / translation matches; nothing deleted) | [`docs/multi-ville.md`](docs/multi-ville.md) · D15 |
+| **Config-driven multi-city engine**: no `if city == …` in the code; a city is one YAML entry; a dark-launched city is invisible to the API | [`cities.yaml`](cities.yaml) · `test_une_requete_paris_ne_renvoie_jamais_jeddah` |
+| **Defence in depth**: SSRF guard on every redirect, text sanitising, nginx limits and CSP, hardened systemd unit | [`safety.py`](safety.py), [`deploy/`](deploy/) |
+| **CI/CD with a real gate**: lint, tests + coverage floor, dependency audit + SBOM, secret scan, Python 3.10/3.12/3.13 matrix; the `prod` tag only moves after a green gate; post-deploy check compares the live commit | [`.github/workflows/`](.github/workflows/) · [`docs/release.md`](docs/release.md) |
+| **Measured, not assumed**: reproducible benchmark and the thresholds that would justify leaving SQLite | [`deploy/bench.py`](deploy/bench.py) · [`docs/performance.md`](docs/performance.md) · [`docs/scaling.md`](docs/scaling.md) |
 
-## Lancer en local
+## Why this project exists
 
-```bash
-python -m venv .venv && . .venv/bin/activate      # Windows : .venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn main:app --reload
+Event apps optimise for browsing. The real question is *"what do I do tonight, close to me?"* — and a
+long list answers it badly. EventMap's constraint is **no choice paralysis**: the default view is
+tonight, 2 km around the user, free events by default (configurable per city); wider windows, categories and filters are one tap away.
+That product constraint drives the engineering: the answer is only trustworthy if duplicates are
+merged, cancelled events disappear, stale data is flagged, and an outage is never mistaken for
+"nothing on tonight".
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Sources["Public sources (feeds.yaml)"]
+        A1["Open-data API<br/>(Paris, ODbL)"]
+        A2["iCalendar feed"]
+        A3["JSON-LD pages"]
+        A4["Opendatasoft dataset"]
+    end
+    subgraph Ingest["Ingestion — refresh loop (separate thread for writes)"]
+        B1["Connector<br/>polite HTTP · 1 req/s/domain<br/>timeout · retries · ETag"] --> B2["Normalise<br/>sanitise · venue reference<br/>status · SSRF guard"]
+        B2 --> B3["Upsert<br/>UNIQUE(source, source_id, start)"]
+        B3 --> B4["Cross-source de-dup<br/>(reversible: doublon_de)"]
+        B4 --> B5["Link check"]
+    end
+    DB[("SQLite · WAL<br/>city_id on every read")]
+    subgraph Serve["Serving"]
+        C1["FastAPI<br/>/api/events · /api/cities · /health"]
+        C2["Server-rendered pages<br/>+ vanilla JS · Leaflet"]
+    end
+    N["nginx<br/>TLS · CSP · rate limit"]
+    M["Monitoring<br/>/health?strict=1 → GitHub Actions → issue"]
+    Sources --> B1
+    B5 --> DB
+    DB --> C1
+    DB --> C2
+    C1 --> N
+    C2 --> N
+    N --> U(("Users"))
+    C1 -. alerts .-> M
+    SD["systemd<br/>(sandboxed unit, CPU/RAM caps)"] -. runs .- Serve
 ```
 
-L'API répond sur http://127.0.0.1:8000, le premier refresh démarre 5 s après
-(≈ 35 s). `/health` indique l'état.
+Stack: **Python 3.10+ · FastAPI · SQLite (WAL) · vanilla HTML/CSS/JS · Leaflet/OpenStreetMap · nginx · systemd ·
+GitHub Actions.** No build step, no front-end framework, no external service to run it.
+
+### Data pipeline
+
+1. **Connector** (one per source, declared in `feeds.yaml`) fetches politely and *raises* on failure; it never
+   returns an empty list to hide an error ([D6](docs/decisions.md)).
+2. **Normalise** (`pipeline.py`, `safety.py`): strip markup, refuse unsafe URLs, attach the venue from a
+   reference file only when the source gives no coordinates, derive status (cancelled / postponed) from the title.
+3. **Upsert**, idempotent, one row per real time slot (a series is never stretched over its date range).
+4. **De-duplicate across sources**: the higher-priority source wins; the loser is marked, never deleted.
+5. **Serve**: every read carries a `city_id`; windows ("tonight", "weekend") are computed in the city's time zone.
+
+## Reliability and failure handling
+
+* **Last-known-good**: a source that fails — or answers 200 with nothing — keeps its previous content
+  ([D7](docs/decisions.md)); stale data is computed at read time and *shown as stale*, not hidden.
+* **Availability vs data**: `/health` always answers 200 while the service runs; data problems appear in
+  `alerts` and make `/health?strict=1` return 503 (stalled refresh, failed cycle, never ingested, repeated
+  errors, silent source, stale data, missing geocoding). The UI tells "no events" from "data outage".
+* **Isolation**: sources and cities have independent cadence, timeout and kill-switches
+  (`EVENTMAP_SOURCES_DISABLED`, `EVENTMAP_CITIES_DISABLED`).
+* **Responsiveness**: the heavy write phase of a refresh runs in a worker thread, so the API (and `/health`)
+  stays live during ingestion.
+* **Additive migrations**: an older release keeps working on a migrated database, so a rollback is safe
+  (`test_un_ancien_code_continue_d_ecrire_dans_une_base_migree`).
+
+## Security and privacy
+
+Only controls that exist in the repository:
+
+* Service binds to `127.0.0.1`; **nginx** terminates TLS, applies `limit_req` on `/api/` and denies `/api/refresh`
+  ([`deploy/nginx/`](deploy/nginx/)); security headers and a CSP with `script-src 'self'` (no inline script, no CDN).
+* **systemd** unit: dedicated user, `NoNewPrivileges`, `ProtectSystem=strict` with a single writable path,
+  restricted address families, memory and CPU caps ([`deploy/eventmap.service`](deploy/eventmap.service)).
+* **SSRF guard** on every outgoing URL *and every redirect*; scraped text is sanitised and HTML-escaped on output.
+* nginx access logs use a truncated-IP format; there are no accounts and no personal data on the server — the browser keeps only preferences (city, language, saved events) in `localStorage`.
+* CI: secret scan, dependency audit, SBOM, Dependabot, third-party Actions pinned to commit SHAs.
+
+## Data sources and licensing
+
+The **code licence** and the **data licences** are separate things.
+
+* **Data**: each source's licence and attribution are recorded in [`feeds.yaml`](feeds.yaml) and
+  [`docs/sources.md`](docs/sources.md): Que faire à Paris (ODbL, City of Paris), the OpenAgenda public-events
+  dataset on Opendatasoft (Licence Ouverte v1.0), the FICEP agenda feed, and a venue's own programme page
+  (title, date, place and a link back only). Attribution is shown in the app.
+* **Policy**: no scraping without explicit rights. Sources whose terms forbid reuse are *declared and disabled*
+  with the evidence, so the decision is auditable ([`docs/jeddah-sources.md`](docs/jeddah-sources.md)).
+* **Code**: no licence file is committed yet — the choice belongs to the owner
+  ([options in `docs/public-readiness.md`](docs/public-readiness.md)). Until then, all rights reserved.
+
+## Trade-offs and decisions
+
+Full log with context and consequences: [`docs/decisions.md`](docs/decisions.md). In short:
+
+* **SQLite, not PostgreSQL**: one writer, read-mostly, tens of thousands of rows; measured in
+  [`docs/performance.md`](docs/performance.md), with the thresholds that would change my mind in
+  [`docs/scaling.md`](docs/scaling.md).
+* **One process, an in-process refresh loop, not a queue and workers**: failure isolation is per source, not per
+  process; a second process adds operations without removing a measured problem.
+* **No scraper without rights**; the optional LLM extractor is off by default and never automatic ([D11](docs/decisions.md)).
+* **Vanilla front end**: a map and a list do not need a build chain; the CSP stays strict because there is nothing to inline.
+* **Lint but no auto-formatter, a coverage *floor* not a target, no `src/` re-layout**: see [D19](docs/decisions.md).
+
+## Incidents and lessons learned
+
+* **API frozen for ~45 s during ingestion** — the write phase ran on the event loop. It now runs in a worker
+  thread; a test fails if the loop is blocked (`test_la_phase_d_ecriture_du_refresh_ne_gele_pas_la_boucle`).
+* **nginx security headers silently dropped** — an `add_header` in a `location` replaces inherited ones.
+  Headers now live in one included snippet per concern ([`deploy/nginx/eventmap.conf`](deploy/nginx/eventmap.conf)).
+* **Deployed, yet the browser ran old JavaScript** — the CDN cached static assets for hours. Scripts now carry a
+  content hash in their URL ([D17](docs/decisions.md)); verification is done in a real browser, not only with `curl`.
+
+## How I would scale it
+
+Today: one process, one SQLite file, one VM. Conditional next steps — PostGIS, a task queue, caching, a CDN — are
+tied to **measured thresholds** (latency p95, rows per city, write contention, cycle duration) in
+[`docs/scaling.md`](docs/scaling.md). None is implemented, because none is needed yet.
+
+## Known limits and roadmap
+
+* **One city is live (Paris).** A second (Jeddah) is built and tested but **off**: no source is authorised in
+  writing yet ([`docs/jeddah-sources.md`](docs/jeddah-sources.md)). Reopening criterion: a written authorisation or
+  a licensed API.
+* Some venues are deliberately not integrated (terms or technical blockers, evidence in [`docs/sources.md`](docs/sources.md)).
+* The production VM still runs Python 3.10; CI proves 3.12/3.13 and the migration plan is in
+  [`docs/python-runtime.md`](docs/python-runtime.md).
+* No automated browser tests (map, keyboard, responsive are checked by hand); single node, no high availability.
+* Branch protection is not enabled (not available on the current GitHub plan for a private repository).
+
+## Run it locally
+
+Requirements: Python 3.10+ (3.12 recommended), Git.
 
 ```bash
-pytest -q                                   # 143 tests, sans réseau
-curl -X POST localhost:8000/api/refresh      # forcer un refresh
+git clone https://github.com/flemops/eventmap.git && cd eventmap
+python -m venv .venv && . .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt                 # runtime + dev tools (pytest, ruff, coverage, pip-audit)
+pytest                                              # offline test suite
+ruff check .                                        # lint
+uvicorn main:app --reload                           # http://127.0.0.1:8000 (first refresh starts after ~5 s)
 ```
 
-## Variables d'environnement
+`/health` shows ingestion state; `POST /api/refresh` (localhost only) forces a cycle.
 
-| Variable | Rôle | Défaut |
+Quality gate, exactly as in CI:
+
+```bash
+ruff check . && pytest --cov --cov-fail-under=78    # coverage floor, see docs/decisions.md D19
+python deploy/bench.py --budget                     # optional: performance regression check
+```
+
+Production deployment, operations and rollback: [`deploy/install.sh`](deploy/install.sh),
+[`docs/release.md`](docs/release.md), [`docs/multi-ville.md`](docs/multi-ville.md).
+
+### Environment variables
+
+| Variable | Role | Default |
 |---|---|---|
-| `EVENTMAP_DB` | Chemin SQLite | `data/eventmap.db` |
-| `EVENTMAP_REFRESH_SECONDS` | Intervalle de refresh | `21600` (6 h) |
-| `EVENTMAP_HORIZON_DAYS` | Fenêtre d'ingestion | `90` |
-| `EVENTMAP_CONTACT` | URL dans le `User-Agent` | URL du dépôt |
+| `EVENTMAP_DB` | SQLite path | `data/eventmap.db` |
+| `EVENTMAP_FEEDS` | Sources file | `feeds.yaml` |
+| `EVENTMAP_REFRESH_SECONDS` | Refresh loop interval | `21600` (6 h) |
+| `EVENTMAP_HORIZON_DAYS` | Ingestion window | `90` |
+| `EVENTMAP_CONTACT` | URL put in the HTTP `User-Agent` | repository URL |
+| `EVENTMAP_LOG` | Log level | `INFO` |
+| `EVENTMAP_CITIES_ENABLED` / `EVENTMAP_CITIES_DISABLED` | Switch cities on / off (off wins) | from `cities.yaml` |
+| `EVENTMAP_SOURCES_DISABLED` | Comma-separated source ids to switch off | — |
+| `OPENAGENDA_KEY`, `ANTHROPIC_API_KEY` | Optional connectors, unused in the live configuration | — |
 
-`OPENAGENDA_KEY` et `ANTHROPIC_API_KEY` activent des connecteurs optionnels
-(`sources.py`, `scrape.py`) qui ne sont pas utilisés dans le périmètre actuel.
-
-## Structure
+## Repository map
 
 ```
-main.py           FastAPI, /api/events, refresh_loop, /health
-db.py             schéma SQLite, upsert idempotent, recherche géo
-sources.py        client HTTP poli (1 req/s/domaine), aggregate() tolérante
-                  aux pannes, dedupe(), parser iCal et OpenAgenda (inactifs)
-sources_paris.py  connecteur Que faire à Paris — la source unique
-discover.py       sonde .ics + JSON-LD sur un domaine (outil, hors refresh)
-scrape.py         extraction LLM, désactivé, jamais automatique
-feeds.yaml        vide — périmètre Paris, QFAP suffit
-docs/sources.md   la source : endpoint, licence, champs, mapping, sondage banlieue
-docs/decisions.md pourquoi les choses sont comme elles sont
-deploy/           unité systemd durcie + bloc nginx + install.sh
-tests/            pytest, sans réseau
+main.py            FastAPI routes, refresh loop, /health + alerts        cities.py / cities.yaml   city definitions
+db.py              schema, additive migrations, idempotent upsert, search registry.py / feeds.yaml  sources + policy
+sources*.py        HTTP client, connectors (ICS, JSON-LD, ODS, open data) pipeline.py, safety.py   normalise, SSRF
+render.py          server-side pages                                      release.py                deployed commit
+static/            vanilla JS/CSS, vendored Leaflet                       tests/                    offline tests + real-record fixtures
+deploy/            systemd unit, nginx, install.sh, verify_prod.py, bench.py
+docs/              decisions, multi-city, sources, performance, scaling, release, runtime, tests, public-readiness
 ```
 
-## Périmètre
-
-**Paris intra-muros uniquement**, par choix (décision D13). Le brief initial
-visait un triangle Nanterre–Paris–Montreuil ; le sondage des sources de
-banlieue n'a rien donné d'exploitable (détail dans `docs/sources.md`), et
-Que faire à Paris couvre Paris à elle seule. Le code reste capable d'agréger
-plusieurs sources si le périmètre s'élargit.
-
-## Licence des données
-
-Que faire à Paris : **ODbL**, Ville de Paris — attribution affichée dans le front.
+AI coding assistants were used as a development aid; design decisions, verification and operation are the
+author's and are recorded in [`docs/decisions.md`](docs/decisions.md).

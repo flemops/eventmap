@@ -1,8 +1,8 @@
 name: Surveillance EventMap (disponibilité + données)
 
-# Pourquoi GitHub Actions et pas un nouvel outil : Uptime Kuma est derrière Cloudflare Access
-# (compte admin à créer à la main) et Observatory n'envoie pas d'alertes. GitHub est déjà là,
-# prévient par courriel et par issue, et ne demande aucun secret.
+# Pourquoi GitHub Actions et pas un nouvel outil : un outil de supervision auto-hébergé demanderait un
+# compte admin et un accès à configurer à la main. GitHub est déjà là, prévient par courriel et par
+# issue, et ne demande aucun secret.
 #
 # Deux sondes distinctes, volontairement :
 #   1. /health            -> le SERVICE répond-il ? (toujours 200 tant que l'application tourne)

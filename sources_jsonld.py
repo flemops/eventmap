@@ -27,6 +27,7 @@ erreur et /health?strict=1 le dit).
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import date, datetime, timedelta, timezone
@@ -36,8 +37,6 @@ from zoneinfo import ZoneInfo
 from db import Event
 from discover import _JSONLD_RE, _walk_jsonld
 from sources import PoliteClient, normalize_category, stable_id
-
-import json
 
 log = logging.getLogger("eventmap.jsonld")
 

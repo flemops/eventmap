@@ -1,0 +1,21 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//ficepparis//agenda//fr
+METHOD:PUBLISH
+X-WR-CALNAME:FICEP - Forum des Instituts Culturels Étrangers à Paris
+X-WR-CALDESC:Agenda des centres culturels étrangers de Paris.
+X-WR-RELCALID:61665301
+BEGIN:VEVENT
+UID:24923782//20261007T090000Z
+DTSTART:20261007T090000Z
+DTEND:20261007T160000Z
+SUMMARY:Aalto Fashion Showroom
+DESCRIPTION:Design finlandais émergent à Paris - Voir plus: https://opena
+ genda.com/events/24923782_aalto-fashion-showroom
+URL:https://openagenda.com/events/24923782_aalto-fashion-showroom
+LOCATION:Institut finlandais - 60 rue des Écoles
+GEO:48.8508;2.343314
+STATUS:CONFIRMED
+DTSTAMP:20261006T203100Z
+END:VEVENT
+END:VCALENDAR

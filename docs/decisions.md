@@ -360,3 +360,45 @@ géolocalisé. La section n'apparaît que si la liste compte ≥ 6 événements 
   la date de l'événement depuis le titre/contenu, pas depuis `pubDate`.
 - **Géocodage différé** des .ics sans `GEO` (Nominatim, 1 req/s, cache).
 - **Sessions persistantes** : sans importance tant que l'accès est par lien.
+
+---
+
+## D19 — Phase 16 : qualité et supply chain sans changer de stack (06/10/2026)
+
+**Contexte.** Rendre le dépôt démontrable (qualité, CI, supply chain) sans réécriture ni nouvelle
+technologie « pour faire moderne ».
+
+**Décisions.**
+
+* **Ruff : lint seulement, pas `ruff format`.** Jeu court (E/F/B/I/UP) ; le formateur réécrirait 25 fichiers
+  sur 30 (colonnes alignées, lignes denses volontaires) pour un gain nul. Évalué, mesuré, écarté.
+* **Couverture : plancher non régressif à 78 %**, fixé sous la mesure de départ (80 % en branches, 06/10/2026)
+  — pas 90 % arbitraire. Monter le plancher quand la mesure monte, jamais l'inverse.
+* **Typage (Pyright/mypy) : non ajouté.** Évalué : la base n'est pas annotée uniformément ; une passe de
+  typage stricte serait une grosse PR cosmétique. À démarrer module par module (`db.py`, `pipeline.py`) si un
+  défaut de type réel apparaît.
+* **CodeQL : essayé puis écarté tant que le dépôt est privé** (D20).
+* **Branche `master` conservée** (pas de passage à `main`) : la migration toucherait le gabarit CI, la VM
+  et d'autres chantiers en cours pour un gain nul.
+* **Stratégie de merge unique : commit de merge** (squash et rebase désactivés) : l'historique garde le
+  découpage en commits cohérents d'une PR, et c'est ce que l'historique contient déjà.
+* **Pas de `src/eventmap/` ni de découpage de `main.py`.** Mesuré (complexité cyclomatique, seuil 12) :
+  une seule fonction très complexe (`sources.dedup_inter_source`, 28), pure et très testée ; `main.py` est
+  organisé en sections claires, et ses fonctions d'état (`_refresh_state`, `compute_alerts`, `_data_state`)
+  sont référencées une cinquantaine de fois par les tests (`main.*`). Déplacer du code coûterait plus qu'il ne rapporterait.
+  Critère de réouverture : un second point d'entrée (CLI, worker) qui doit réutiliser le refresh sans importer FastAPI.
+* **SQLite conservé** : mesures et seuils dans `docs/performance.md` et `docs/scaling.md`.
+* **Dépendances** : les six dépendances d'exécution sont toutes importées (vérifié) ; `uvicorn[standard]`
+  est gardé pour ses extras de performance (uvloop, httptools) sur le chemin chaud.
+
+## D20 — CodeQL écarté tant que le dépôt est privé
+
+**Contexte.** CodeQL (Python + JavaScript) a été essayé le 06/10/2026 dans la PR de la phase 16 : l'analyse
+tourne, mais le dépôt des résultats échoue — « Code scanning is not enabled for this repository » (API
+`code-scanning/alerts` : 403) — car il exige GitHub Advanced Security sur un dépôt privé.
+
+**Décision.** Workflow retiré plutôt que laissé rouge ou « vert pour la forme ». **Critère de réactivation** :
+passage du dépôt en public (CodeQL y est gratuit) — remettre `codeql.yml` (actions épinglées sur SHA, matrice
+`python` + `javascript-typescript`, passage hebdomadaire + PR). Contrôles de sécurité actifs entre-temps :
+Ruff (règles E/F/B), `pip-audit` (dépendances), gitleaks (secrets), alertes Dependabot activées sur le dépôt,
+et en-têtes/CSP vérifiés sur le service réel par `deploy/verify_prod.py`.

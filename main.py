@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import platform
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -22,7 +23,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import cities
@@ -31,6 +32,7 @@ import db
 import linkcheck
 import pipeline
 import registry
+import release
 import render
 import sources
 import sources_jsonld
@@ -109,7 +111,7 @@ def _build_fetchers(con, now: datetime | None = None
                 fetcher = (lambda c, _s=spec: sources_jsonld.fetch(
                     c, _s.url, _s.options, source=f"{_s.kind}:{_s.url}"))
             elif spec.kind == "openagenda":
-                fetcher = (lambda c, _uid=spec.url.rsplit("/", 1)[-1]: sources.fetch_openagenda(c, _uid))
+                fetcher = (lambda c, _uid=spec.url.rsplit("/", 1)[-1]: sources.fetch_openagenda(c, _uid))  # noqa: B008 — _uid figé à la création (liaison tardive voulue)
             else:
                 continue       # `jsonld` et `llm` ne tournent que sur demande explicite
         # Cadence : ne pas réinterroger une source plus souvent que `refresh_hours`.
@@ -322,7 +324,7 @@ def _window(when: str, now: datetime, city: cities.City | None = None) -> tuple[
         return timewin.window(when, now, city.tz, weekend_days=city.weekend_days,
                               cutoff=city.night_cutoff_hour)
     except ValueError as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
 
 
 def _city_or_404(city_id: str | None) -> cities.City:
@@ -563,6 +565,7 @@ def api_categories(city: str | None = Query(None, pattern="^[a-z][a-z0-9-]{1,30}
 
 
 _STARTED = datetime.now(timezone.utc)
+_COMMIT = release.read_commit(BASE_DIR)      # commit déployé, exposé par /health (release.py)
 STARTUP_GRACE = timedelta(minutes=20)       # le premier cycle part 5 s apres le demarrage et dure ~1-2 min
 
 
@@ -659,6 +662,7 @@ def health(strict: bool = Query(False, description="503 s'il y a une alerte (sur
             degraded = True
     body = {
         "status": "degraded" if degraded else "ok",
+        "release": {"commit": _COMMIT[:12] if _COMMIT else None, "python": platform.python_version()},
         "silent_sources": silent,
         "db": s,
         "feeds": {"total": len(feeds), "enabled": sum(f["enabled"] for f in feeds)},

@@ -86,7 +86,7 @@ de ce soir.
 | État par ville et par source | `curl -s localhost:8000/health` → `cities.<ville>.{data,sources,anomalies,not_running}` |
 | Forcer un cycle | `curl -X POST localhost:8000/api/refresh` (localhost seulement) |
 | Rôle d'un événement | `GET /api/events/{id}?city=…` → `provenance` |
-| Vérifier un déploiement | `python deploy/verify_prod.py` (51 contrôles sur le service réel, sans accès VM) |
+| Vérifier un déploiement | `python deploy/verify_prod.py` (contrôles sur le service réel, en lecture seule, sans accès VM) |
 | Alertes de données | `GET /health?strict=1` : 503 + liste `alerts` (voir ci-dessous) |
 
 `data.state` : `unknown` (rien interrogé) · `ok` · `partial` (une source en retard ou en

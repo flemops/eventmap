@@ -25,7 +25,7 @@ import yaml
 CITIES_FILE = Path(os.environ.get("EVENTMAP_CITIES", Path(__file__).resolve().parent / "cities.yaml"))
 DEFAULT_CITY = "paris"
 
-_cache: dict[str, "City"] | None = None
+_cache: dict[str, City] | None = None
 
 
 @dataclass(frozen=True)
