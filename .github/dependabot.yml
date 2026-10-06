@@ -1,0 +1,21 @@
+# Une PR groupée par écosystème et par mois : pas de bruit quotidien.
+# Les versions de requirements*.txt sont épinglées en == (voir l'en-tête de requirements.txt :
+# le rollback réinstalle exactement ces versions) — Dependabot propose le nouvel épinglage.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      python-deps:
+        patterns: ["*"]
+    open-pull-requests-limit: 3
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 3

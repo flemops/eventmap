@@ -15,16 +15,21 @@ permissions:
 
 jobs:
   ci:
-    uses: flemops/ci-templates/.github/workflows/valider-et-taguer.yml@master
+    # Épinglé sur un commit de ci-templates (pas @master) : un changement du gabarit ne peut plus
+    # modifier silencieusement ce qui autorise le déploiement. Dependabot (github-actions) propose
+    # la mise à jour du SHA ; relire le diff du gabarit avant de l'accepter.
+    uses: flemops/ci-templates/.github/workflows/valider-et-taguer.yml@4a48712a9e096bbcdbad47669d5b0ef5efe3aa4c  # master au 06/10/2026
     with:
       runtime: python
+      # Version de la VM aujourd'hui : le tag `prod` ne se déplace que si les tests passent sur le
+      # runtime réellement déployé. À passer à 3.12 avec la migration de la VM (docs/python-runtime.md).
       version: "3.10"
-      install_cmd: pip install -r requirements.txt
-      # "pytest" nu ne met pas la racine du dépôt sur sys.path (pas de
-      # pyproject.toml/pytest.ini ici) : tests/test_core.py qui importe
-      # `cultures`/`db`/`main` échouerait en ModuleNotFoundError. "python -m
-      # pytest" l'ajoute (CWD en sys.path[0]).
-      test_cmd: python -m pytest
+      install_cmd: pip install -r requirements-dev.txt
+      lint_cmd: ruff check .
+      test_cmd: pytest --cov --cov-fail-under=78
+      # Filet : les dépendances de PRODUCTION seules doivent suffire à importer l'application.
+      prod_install_cmd: pip install -r requirements.txt
+      prod_check_cmd: python deploy/check_imports.py
       # == true, pas juste inputs.tag_prod : sur un déclenchement push (pas
       # workflow_dispatch), inputs.tag_prod vaut null, pas false — un null
       # passé à un paramètre booléen du reusable workflow invalide tout le
