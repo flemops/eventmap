@@ -153,6 +153,11 @@
       panel.innerHTML = c.events.length
         ? fiche + c.events.map(cardHTML).join("")
         : fiche + `<div class="empty">Rien d'annoncé cette semaine pour cette culture.</div>`;
+      /* Le panneau s'ouvre SOUS la grille des cultures : avec 15 cultures sur 4 colonnes il est
+         hors de l'écran, et le clic semblait ne rien faire (signalé le 06/10/2026). On l'amène
+         à l'écran, instantanément : un défilement animé n'est pas fiable partout (pas d'image
+         produite dans un onglet en arrière-plan) et l'utilisateur vient de cliquer. */
+      panel.scrollIntoView({ behavior: "auto", block: "start" });
     });
   }
 
