@@ -118,3 +118,48 @@ feeds:
       api.webook.com, interface privée non documentée. Pas de méthode d'accès
       stable ni autorisée : rien à bricoler. À reconsidérer si webook publie une
       API partenaire.
+
+# --- PARIS : salles évaluées le 06/10/2026 (phase 2.7 / 2.8) -----------------------------------------
+# Bataclan : robots.txt autorise tout sauf /pro/ ; mentions légales + CGV lues en entier : AUCUNE clause sur
+# la réutilisation du contenu du site (seulement la reproduction des BILLETS) ; chaque page /evenement/…
+# publie un JSON-LD schema.org/Event pour les machines. On n'affiche que titre, date, lieu et un lien vers
+# la page officielle et la billetterie (jamais d'image ni de description longue — voir pipeline). Coupable
+# en une ligne : EVENTMAP_SOURCES_DISABLED=bataclan. Si la salle objecte : la couper, rien d'autre à faire.
+  - id: bataclan
+    city: paris
+    type: jsonld_sitemap
+    url: "https://www.bataclan.fr/sitemap.xml"
+    name: "Bataclan — programmation"
+    enabled: true
+    authorization: ok
+    priority: 6
+    refresh_hours: 24
+    timeout_s: 420
+    retries: 1
+    min_interval_s: 1.5
+    attribution: "Bataclan (programmation officielle)"
+    home: "https://www.bataclan.fr/programmation"
+    status: ok
+    checked: "2026-10-06"
+    options:
+      include: "/evenement/"
+      exclude: "_en$"
+      date_in_url: '_(\d{4}-\d{2}-\d{2})$'
+      max_pages: 150
+      tz: "Europe/Paris"
+      naive_utc_label: false         # Z = vraie UTC : vérifié le 06/10 — l'en-tête de page affiche l'heure UTC (17h00) alors que
+                                     # le déroulé de la même page dit « ouverture des portes 19h00 » (= 17:00Z en heure d'été)
+      default_category: music
+      venue:
+        name: "Bataclan"
+        address: "50 boulevard Voltaire, 75011 Paris"
+        lat: 48.8631
+        lon: 2.3709                  # OSM (node 13100559819) et Base Adresse Nationale concordent
+
+# Écartées (preuves : docs/sources.md) :
+#  - CENTQUATRE : pages /fr/programmation/… balisées Event, MAIS mentions légales : « base de données … protégé par
+#    le Code de la propriété intellectuelle … toute reproduction, représentation … sans autorisation écrite préalable »
+#    → accord écrit requis (action humaine, comme Visit Saudi).
+#  - La Cigale : robots.txt Crawl-delay 3 et `Disallow: /*?` ; aucune page événement balisée Event.
+#  - Rond-Point, Odéon : aucun JSON-LD Event trouvé (pages d'archive / saison seulement).
+#  - Chaillot : site injoignable depuis ce poste le 06/10/2026.

@@ -8,7 +8,7 @@ dans une base de production : ils servent à prouver le comportement du moteur
 import asyncio
 import json
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -629,8 +629,9 @@ def test_registre_coherent_avec_les_villes():
 
 def test_kill_switch_de_source_et_de_ville_dans_le_refresh(con, monkeypatch):
     fetchers, by_key = main._build_fetchers(con)
-    assert set(by_key) == {"qfap", registry.load()[1].url}
-    monkeypatch.setenv("EVENTMAP_SOURCES_DISABLED", "ficep")
+    specs = {s.id: s for s in registry.load()}
+    assert set(by_key) == {"qfap", specs["ficep"].url, specs["bataclan"].url}
+    monkeypatch.setenv("EVENTMAP_SOURCES_DISABLED", "ficep,bataclan")
     fetchers, by_key = main._build_fetchers(con)
     assert set(by_key) == {"qfap"}
     monkeypatch.setenv("EVENTMAP_CITIES_DISABLED", "paris")
@@ -699,8 +700,11 @@ def test_choix_de_ville_quand_il_y_en_a_deux(client, jeddah_on):
 
 
 def test_contenu_indexable_et_donnees_structurees(client, base_temp, jeddah_on):
-    now = datetime.now(UTC) + timedelta(hours=1)
-    _put(base_temp, [_jed("Jazz Night", now, venue="Al-Balad", category="music", price_type="free")])
+    # Un événement EN COURS (commencé il y a 10 min, fini dans 2 h) : il chevauche toujours « ce soir »,
+    # quelle que soit l'heure à laquelle le test tourne (un « dans 1 h » sortait de la soirée de Jeddah
+    # entre 04 h et 05 h, heure locale — test écrit à 03 h, cassé à 04 h 35).
+    now = datetime.now(UTC) - timedelta(minutes=10)
+    _put(base_temp, [_jed("Jazz Night", now, end=now + timedelta(hours=2), venue="Al-Balad", category="music", price_type="free")])
     html = client.get("/jeddah/carte").text
     assert "Jazz Night" in html                                  # dans le HTML, sans JavaScript
     ld = json.loads(html.split('<script type="application/ld+json">')[1].split("</script>")[0])
@@ -962,3 +966,98 @@ def test_le_lieu_s_affiche_dans_la_langue_de_l_interface(client, base_temp, jedd
     par_langue = {lg: client.get("/api/events", params={"city": "jeddah", "radius": 30, "when": "week", "lang": lg}).json()["events"][0]["venue"]
                   for lg in ("en", "ar")}
     assert par_langue == {"en": "Jeddah Yacht Club", "ar": "نادي جدة لليخوت"}
+
+
+# ============================================= connecteur sitemap + JSON-LD (Bataclan, 2.7)
+
+_PAGE = ('<html><head><script type="application/ld+json">{"@context":"https://schema.org","@type":"Event",'
+         '"name":"A2H","startDate":"2026-11-20T18:00:00.000Z","endDate":null,'
+         '"eventStatus":"https://schema.org/EventScheduled",'
+         '"location":{"@type":"Place","name":"Bataclan"},"description":"<p>Rap &amp; soul</p>",'
+         '"offers":{"@type":"Offer","url":"https://billetterie.example/a2h","priceCurrency":"EUR"}}</script></head></html>')
+_OPTS = {"include": "/evenement/", "exclude": "_en$", "date_in_url": r"_(\d{4}-\d{2}-\d{2})$", "tz": "Europe/Paris",
+         "naive_utc_label": False, "default_category": "music",
+         "venue": {"name": "Bataclan", "address": "50 boulevard Voltaire, 75011 Paris", "lat": 48.8631, "lon": 2.3709}}
+
+
+def test_un_Z_est_de_l_UTC_sauf_option_explicite():
+    import sources_jsonld
+    ev = sources_jsonld.events_from_page(_PAGE, "https://www.bataclan.fr/evenement/a2h_2026-11-20", _OPTS, "jsonld_sitemap:x")[0]
+    # Le Bataclan donne « 18:00:00.000Z » : c'est de l'UTC (vérifié sur son déroulé horaire), soit 19:00 à Paris en novembre.
+    assert ev.start.astimezone(PARIS).strftime("%H:%M") == "19:00"
+    assert ev.start.utcoffset() is not None
+    assert (ev.title, ev.source_id, ev.venue, ev.lat, ev.category) == ("A2H", "a2h_2026-11-20", "Bataclan", 48.8631, "music")
+    assert ev.booking_url == "https://billetterie.example/a2h" and ev.currency == "EUR"
+    # L'option existe pour un site qui écrirait l'heure LOCALE avec un « Z » : alors le Z est ignoré.
+    ev2 = sources_jsonld.events_from_page(_PAGE, "https://x/evenement/a", {**_OPTS, "naive_utc_label": True}, "s")[0]
+    assert ev2.start.astimezone(PARIS).strftime("%H:%M") == "18:00"
+
+
+def test_statuts_schema_org():
+    import sources_jsonld
+    for url, attendu in (("https://schema.org/EventCancelled", "cancelled"), ("https://schema.org/EventPostponed", "postponed"),
+                         ("https://schema.org/EventScheduled", "active")):
+        html = _PAGE.replace("https://schema.org/EventScheduled", url)
+        assert sources_jsonld.events_from_page(html, "https://x/evenement/a", _OPTS, "s")[0].status == attendu
+
+
+def _transport(pages, sitemap):
+    import httpx
+
+    def handler(req):
+        p = req.url.path
+        if p == "/sitemap.xml":
+            return httpx.Response(200, text=sitemap)
+        return httpx.Response(200, text=pages[p]) if p in pages else httpx.Response(404)
+    return httpx.MockTransport(handler)
+
+
+def test_sitemap_filtre_les_pages_passees_et_les_copies_en_anglais():
+    import httpx
+    import sources_jsonld
+    sm = "".join(f"<url><loc>https://salle.test{p}</loc></url>" for p in (
+        "/evenement/a2h_2026-11-20", "/evenement/a2h_2026-11-20_en", "/evenement/ancien_2020-01-01", "/programmation"))
+    vus = []
+
+    def handler(req):
+        vus.append(req.url.path)
+        return httpx.Response(200, text=sm if req.url.path == "/sitemap.xml" else _PAGE)
+
+    async def go():
+        c = sources_jsonld.PoliteClient(min_interval=0, public_only=False)
+        c._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=False)
+        async with c:
+            return await sources_jsonld.fetch(c, "https://salle.test/sitemap.xml", _OPTS, "jsonld_sitemap:t", today=date(2026, 10, 6))
+
+    evs = asyncio.run(go())
+    assert [e.source_id for e in evs] == ["a2h_2026-11-20"]
+    assert vus == ["/sitemap.xml", "/evenement/a2h_2026-11-20"]       # ni le passé, ni la copie _en, ni la page de liste
+
+
+def test_une_panne_silencieuse_du_parseur_n_est_pas_une_liste_vide():
+    import httpx
+    import sources_jsonld
+
+    async def run(sitemap, page_html, status=200):
+        def handler(req):
+            return httpx.Response(200, text=sitemap) if req.url.path == "/sitemap.xml" else httpx.Response(status, text=page_html)
+        c = sources_jsonld.PoliteClient(min_interval=0, public_only=False)
+        c._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=False)
+        async with c:
+            return await sources_jsonld.fetch(c, "https://salle.test/sitemap.xml", _OPTS, "t", today=date(2026, 10, 6))
+
+    un = "<url><loc>https://salle.test/evenement/a_2026-11-20</loc></url>"
+    with pytest.raises(ValueError):
+        asyncio.run(run("", ""))                               # sitemap illisible
+    with pytest.raises(ValueError):
+        asyncio.run(run(un, "<html>refonte : plus de JSON-LD</html>"))   # pages lues, plus aucun Event
+    with pytest.raises(RuntimeError):
+        asyncio.run(run(un, "", status=500))                   # toutes les pages en échec
+
+
+def test_la_source_bataclan_est_declaree_et_lancable():
+    specs = {s.id: s for s in registry.load()}
+    b = specs["bataclan"]
+    assert b.kind == "jsonld_sitemap" and b.city_id == "paris" and b.authorization == "ok" and b.runnable()
+    assert b.options["naive_utc_label"] is False and b.options["venue"]["lat"] == 48.8631
+    assert registry.validate(list(specs.values())) == []

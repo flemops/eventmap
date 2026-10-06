@@ -244,3 +244,28 @@ Treize domaines du brief initial (Nanterre, Montreuil, 92, 93) sondés avec
 Deux pistes si le périmètre s'élargit un jour : un parser RSS dédié pour
 La Marbrerie et Les Instants Chavirés (extraire la date de l'event du titre
 ou de la page), et une demande d'export iCal à la DSI de Nanterre.
+
+---
+
+## 7. Salles parisiennes évaluées le 06/10/2026 (phase 2.7 / 2.8)
+
+Méthode : `robots.txt`, sitemap, présence d'un JSON-LD `Event` sur une page événement, puis **lecture des mentions
+légales / CGU** pour toute clause sur la réutilisation du contenu du site. Reproductible : `deploy/verify_prod.py`
+vérifie le service ; les sondes de sources sont décrites dans les commentaires de `feeds.yaml`.
+
+| Salle | Accès | Conditions | Décision |
+|---|---|---|---|
+| **Bataclan** | robots : tout sauf `/pro/` ; sitemap : 102 pages `/evenement/…` (51 événements × fr/en) ; JSON-LD `Event` complet (titre, date, lien de billetterie) | mentions légales + CGV lues en entier : **aucune clause** sur la réutilisation du contenu (seulement la reproduction des billets) | **Intégrée** (`bataclan`, connecteur `jsonld_sitemap`, 1 requête / 1,5 s, 24 h de cadence, titre + date + lieu + liens, aucune image) |
+| **CENTQUATRE** | JSON-LD `Event` sur les pages `/fr/programmation/…`, robots ouvert | mentions légales : base de données protégée, « toute reproduction, représentation … sans autorisation écrite préalable » | **Bloquée** : accord écrit requis (comme Visit Saudi) |
+| **La Cigale** | robots : `Crawl-delay: 3`, `Disallow: /*?` | — | Aucune page événement balisée `Event` : rien à lire proprement |
+| **Rond-Point**, **Odéon** | sitemaps lisibles | — | Aucun JSON-LD `Event` trouvé (archives / saison seulement) |
+| **Chaillot** | site injoignable depuis ce poste le 06/10 | — | Non évalué |
+| **Agenda Culturel** | robots ouvert (crawl-delay 60 pour d'autres robots), RSS annoncé | non lues | RSS seul, sans JSON-LD ; à reprendre avec un géocodage BAN (2.6) |
+
+### Piège rencontré : l'heure des pages du Bataclan
+
+L'en-tête d'une page affiche l'heure **UTC** (« 6 octobre 2026 – 17h00 ») alors que le déroulé de la même page dit
+« ouverture des portes 19h00 » : 17:00Z = 19:00 en heure d'été. Le JSON-LD est donc correct (`Z` = UTC) et
+l'option `naive_utc_label` reste **fausse** pour cette source. J'avais d'abord cru le contraire en lisant seulement
+l'en-tête ; c'est le déroulé horaire qui a tranché. Toujours confronter le JSON-LD à une information indépendante
+de la page avant de « corriger » un fuseau.
