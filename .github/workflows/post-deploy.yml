@@ -38,7 +38,7 @@ jobs:
           for i in $(seq 1 40); do
             h=$(curl -fsS --max-time 20 https://eventmap.hamdy-tabsissi.com/health) || h='{}'
             live=$(echo "$h" | jq -r '.release.commit // "?"')
-            busy=$(echo "$h" | jq -r '.refresh.running // true')
+            busy=$(echo "$h" | jq -r '.refresh.running | tostring')   # pas « // true » : jq traite false comme absent
             echo "essai $i : en service=$live attendu=${EXPECTED_COMMIT:0:12} refresh en cours=$busy"
             if [ "$live" = "${EXPECTED_COMMIT:0:12}" ] && [ "$busy" = "false" ]; then sleep 20; exit 0; fi
             sleep 30

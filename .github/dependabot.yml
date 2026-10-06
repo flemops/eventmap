@@ -1,6 +1,13 @@
-# Une PR groupée par écosystème et par mois : pas de bruit quotidien.
+# Une PR groupée par mois pour les dépendances Python : pas de bruit quotidien.
 # Les versions de requirements*.txt sont épinglées en == (voir l'en-tête de requirements.txt :
 # le rollback réinstalle exactement ces versions) — Dependabot propose le nouvel épinglage.
+#
+# Écosystème `github-actions` volontairement ABSENT : le workflow réutilisable `flemops/ci-templates`
+# (dépôt privé) est invisible de Dependabot, et son job échoue entièrement (« Repository not found »)
+# même avec `ignore:` (constaté le 06/10/2026). Les actions sont épinglées sur des SHA (test
+# `test_toute_action_tierce_est_epinglee_sur_un_sha`) et se mettent à jour à la main, par revue
+# trimestrielle. Réactiver ici dès que Dependabot a accès à ci-templates (réglage de ce dépôt
+# privé) ou que le dépôt devient public : décision D19, docs/release.md.
 version: 2
 updates:
   - package-ecosystem: pip
@@ -10,17 +17,4 @@ updates:
     groups:
       python-deps:
         patterns: ["*"]
-    open-pull-requests-limit: 3
-  - package-ecosystem: github-actions
-    directory: "/"
-    schedule:
-      interval: monthly
-    groups:
-      github-actions:
-        patterns: ["*"]
-    ignore:
-      # Dépôt privé : Dependabot n'y a pas accès (« Repository not found », la mise à jour échoue
-      # entièrement). Le SHA de ci-templates dans prod-tag.yml se met à jour À LA MAIN : relire le
-      # diff du gabarit puis changer le SHA (docs/release.md).
-      - dependency-name: "flemops/ci-templates"
     open-pull-requests-limit: 3
