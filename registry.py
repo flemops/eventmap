@@ -48,6 +48,7 @@ class SourceSpec:
     note: str = ""
     attribution: str = ""
     home: str = ""
+    options: dict = field(default_factory=dict)
 
     @property
     def key(self) -> str:
@@ -103,6 +104,7 @@ def load(path: Path | None = None) -> list[SourceSpec]:
                 min_interval_s=float(feed.get("min_interval_s", 1.0)),
                 geo_bbox=feed.get("geo_bbox"), note=feed.get("note", "") or "",
                 attribution=feed.get("attribution", "") or "", home=feed.get("home", "") or "",
+                options=dict(feed.get("options") or {}),
             ))
     return specs
 

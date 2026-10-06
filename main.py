@@ -33,6 +33,7 @@ import pipeline
 import registry
 import render
 import sources
+import sources_jsonld
 import sources_paris
 import timewin
 import venues
@@ -101,6 +102,9 @@ def _build_fetchers(con, now: datetime | None = None
             if spec.kind == "ics":
                 fetcher = _ics_fetcher(spec.url, feed.get("etag"), feed.get("last_modified"),
                                        geo_bbox=spec.geo_bbox)
+            elif spec.kind == "jsonld_sitemap":
+                fetcher = (lambda c, _s=spec: sources_jsonld.fetch(
+                    c, _s.url, _s.options, source=f"{_s.kind}:{_s.url}"))
             elif spec.kind == "openagenda":
                 fetcher = (lambda c, _uid=spec.url.rsplit("/", 1)[-1]: sources.fetch_openagenda(c, _uid))
             else:
