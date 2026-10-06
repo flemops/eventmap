@@ -341,9 +341,14 @@ def root_page(site: str):
     for c in active:
         cards.append(
             f'<a class="city-card" href="{_esc(city_path(c))}" data-city="{_esc(c.id)}">'
-            f'<b>{_esc(c.name("en"))}</b>'
+            f'<b>{_esc(c.name("en"))}<span class="cs-badge live">{_esc(s["cs_live"])}</span></b>'
             f'<small lang="ar" dir="rtl">{_esc(c.names.get("ar", ""))}</small>'
             f'<span class="go">{_esc(s["explore"])}</span></a>')
+    for c in cities.load().values():          # villes éteintes déclarées teaser : une carte, pas un lien
+        if c.teaser and not c.enabled:
+            cards.append(f'<div class="city-card soon-card"><b>{_esc(c.name("en"))}'
+                         f'<span class="cs-badge">{_esc(s["cs_soon"])}</span></b>'
+                         f'<small lang="ar" dir="rtl">{_esc(c.names.get("ar", ""))}</small></div>')
     tokens = {
         "CITY_CARDS": "".join(cards),
         "CITYJSON": _json_block({"cities": [c.public() for c in active]}),
