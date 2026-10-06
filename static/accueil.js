@@ -129,7 +129,7 @@
     loaded.sort((a, b) => b.events.length - a.events.length);
 
     host.innerHTML = loaded.map((c) => {
-      const lieu = c.events[0]?.culture?.lieu || "";
+      const lieu = (c.events.find((e) => e.culture?.lieu) || c.events[0])?.culture?.lieu || "";
       const n = c.events.length;
       // Option C revue (03/09/2026, décision de Hamdy) : la facette qualifie
       // le LIEU, jamais l'événement, mais le libellé du bouton n'affiche que
@@ -149,7 +149,11 @@
       if (open) { panel.innerHTML = ""; return; }
       btn.setAttribute("aria-expanded", "true");
       const c = loaded.find((x) => x.cle === btn.dataset.cle);
-      const fiche = ficheHTML(c.events[0]?.culture?.fiche);
+      // La fiche est celle du LIEU, mais un même lieu a plusieurs écritures (QFAP « Maison de la culture du
+      // Japon à Paris », FICEP « Maison de la Culture du Japon ») dont certaines n'ont pas de fiche : on prend
+      // la première événement qui en porte une — sinon le premier événement, quel qu'il soit, décidait de tout.
+      const avecFiche = c.events.map((e) => e.culture?.fiche).find((f) => f && Object.keys(f).length);
+      const fiche = ficheHTML(avecFiche);
       panel.innerHTML = c.events.length
         ? fiche + c.events.map(cardHTML).join("")
         : fiche + `<div class="empty">Rien d'annoncé cette semaine pour cette culture.</div>`;
