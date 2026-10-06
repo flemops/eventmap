@@ -25,6 +25,8 @@ _FR = {
     "gate_desc": "Choisissez votre ville : Paris ou Djeddah.",
     "gate_h1": "Où sortez-vous ?",
     "soon": "D'autres villes bientôt",
+    "cs_label": "Ville", "cs_live": "Live", "cs_soon": "Coming soon",
+    "cs_ready": "{city} est techniquement prête. Les événements seront en ligne dès qu'une source réutilisable sera disponible.",
     "sources": "Sources", "maps": "Cartes",
     "nf_title": "Page introuvable", "nf_msg": "Cette page ou cette ville n'est pas disponible. Choisissez une ville :",
 }
@@ -44,6 +46,8 @@ _EN = {
     "gate_desc": "Pick your city: Paris or Jeddah.",
     "gate_h1": "Where are you going out?",
     "soon": "More cities coming soon",
+    "cs_label": "City", "cs_live": "Live", "cs_soon": "Coming soon",
+    "cs_ready": "{city} is technically ready. Event data will go live once a reusable source is available.",
     "sources": "Sources", "maps": "Maps",
     "nf_title": "Page not found", "nf_msg": "This page or city isn't available. Pick a city:",
 }
@@ -63,6 +67,8 @@ _AR = {
     "gate_desc": "اختر مدينتك: باريس أو جدة.",
     "gate_h1": "أين تريد الخروج؟",
     "soon": "مدن أخرى قريبًا",
+    "cs_label": "المدينة", "cs_live": "متاحة", "cs_soon": "قريبًا",
+    "cs_ready": "{city} جاهزة تقنيًا. ستتوفر بيانات الفعاليات فور توفر مصدر يمكن إعادة استخدامه.",
     "sources": "المصادر", "maps": "الخرائط",
     "nf_title": "الصفحة غير موجودة", "nf_msg": "هذه الصفحة أو المدينة غير متاحة. اختر مدينة:",
 }

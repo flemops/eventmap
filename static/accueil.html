@@ -49,6 +49,7 @@ body {
 
 /* ---- en-tête ------------------------------------------------------------ */
 .top { padding: 26px 0 18px; }
+.top .cityswitch { margin-bottom: 14px; }
 .top h1 { margin: 0 0 6px; font-size: 26px; line-height: 1.15; letter-spacing: -.01em; }
 .top h1 span { color: var(--accent); }
 .top p { margin: 0; color: var(--muted); font-size: 14px; max-width: 60ch; }
@@ -158,6 +159,7 @@ footer { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 12px;
 <main class="wrap">
 
   <header class="top">
+    %%CITY_SWITCH%%
     <h1>Ce soir à Paris, <span>gratuit d'abord</span></h1>
     <p>Les événements parisiens rangés par culture d'origine et par catégorie. Pas de compte, pas de pub, rien de stocké.</p>
   </header>
@@ -199,6 +201,7 @@ footer { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 12px;
 <script src="/static/vendor/leaflet/leaflet.js"></script>
 <script src="/static/i18n.js?v=%%V%%"></script>
 <script src="/static/common.js?v=%%V%%"></script>
+<script src="/static/cityswitch.js?v=%%V%%" defer></script>
 <script src="/static/accueil.js?v=%%V%%" defer></script>
 <script src="/static/etat-sources.js?v=%%V%%" defer></script>
 </body>

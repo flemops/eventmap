@@ -50,8 +50,11 @@ cities:
     # réutilisation automatisée sans licence ; Webook n'expose pas d'accès
     # public stable). Le moteur est prêt, il n'y a pas de données à afficher.
     enabled: false
+    # Visible dans le sélecteur de ville comme « Coming soon » (élément désactivé + courte
+    # explication). N'ouvre rien : ni route, ni API, ni donnée — `enabled` reste le seul interrupteur.
+    teaser: true
     country: SA
-    names: {en: "Jeddah", ar: "جدة", fr: "Djeddah"}
+    names: {en: "Jeddah", ar: "جدة", fr: "Jeddah"}
     timezone: Asia/Riyadh
     currency: SAR
     languages: [en, ar]

@@ -79,6 +79,38 @@ def footer_html(city: cities.City, lang: str = "fr") -> str:
     return (f"{s['sources']}{colon}{links}. " if links else "") + f"{s['maps']} © {osm}."
 
 
+def city_switch_html(current: cities.City, lang: str) -> str:
+    """Sélecteur de ville rendu côté serveur (marche sans JavaScript).
+
+    Villes allumées : liens. Villes éteintes déclarées `teaser` : un bouton `aria-disabled`
+    (focusable, donc lisible au clavier) + un badge « Coming soon » ; l'explication est dans
+    le HTML (`aria-describedby`) et static/cityswitch.js l'affiche au clic. Rien d'une ville
+    teaser n'est une page, une route ou une donnée : c'est du texte."""
+    s = i18n.strings(lang)
+    items = []
+    for c in cities.all_active():
+        name = _esc(c.name(lang))
+        badge = f'<span class="cs-badge live">{_esc(s["cs_live"])}</span>'
+        if c.id == current.id:
+            items.append(f'<li><a class="cs-item" href="{_esc(city_path(c, lang))}" aria-current="page">'
+                         f'{name} {badge}</a></li>')
+        else:
+            items.append(f'<li><a class="cs-item" href="{_esc(city_path(c))}">{name} {badge}</a></li>')
+    soon = [c for c in cities.load().values() if c.teaser and not c.enabled]
+    msgs = []
+    for c in soon:
+        mid = f"cs-msg-{c.id}"
+        items.append(f'<li><button type="button" class="cs-item cs-soon" aria-disabled="true" '
+                     f'aria-expanded="false" aria-controls="{mid}" aria-describedby="{mid}">'
+                     f'{_esc(c.name(lang))} <span class="cs-badge">{_esc(s["cs_soon"])}</span></button></li>')
+        msgs.append(f'<p class="cs-msg" id="{mid}" role="status" hidden>'
+                    f'{_esc(s["cs_ready"].format(city=c.name(lang)))}</p>')
+    if len(items) < 2:
+        return ""
+    return (f'<nav class="cityswitch" aria-label="{_esc(s["cs_label"])}"><ul>{"".join(items)}</ul>'
+            f'{"".join(msgs)}</nav>')
+
+
 def _fill(tpl: str, tokens: dict[str, str]) -> str:
     out = tpl
     for k, v in tokens.items():
@@ -194,7 +226,7 @@ def _page(name: str, city: cities.City, lang: str, site: str, *, suffix: str, ti
                                  "paths": {"home": city_path(city, lang), "map": city_path(city, lang, "/carte")},
                                  "languages": list(city.languages)}),
         "MAP_URL": _esc(city_path(city, lang, "/carte")), "HOME_URL": _esc(city_path(city, lang)),
-        "CITY_NAME": _esc(city.name(lang)),
+        "CITY_NAME": _esc(city.name(lang)), "CITY_SWITCH": city_switch_html(city, lang),
         "SEO_EVENTS": _events_html(events or [], city, lang),
         "SEO_NOSCRIPT": _esc(s["noscript"]), "V": asset_version(), "FOOTER": footer_html(city, lang),
         **{k: v for k, v in (extra or {}).items()},

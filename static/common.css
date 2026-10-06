@@ -40,3 +40,19 @@
 .price.paid { color: var(--paid); }
 
 footer a { color: inherit; }
+
+/* ---- sélecteur de ville (rendu serveur, render.city_switch_html) ------------------------------ */
+.cityswitch ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.cityswitch .cs-item {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 12px; font: inherit; font-size: 14px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--chip-bg); color: var(--text); text-decoration: none;
+}
+.cityswitch a.cs-item[aria-current="page"] { border-color: var(--accent); }
+.cityswitch a.cs-item:hover { border-color: var(--accent); }
+.cityswitch .cs-soon { cursor: pointer; color: var(--muted); border-style: dashed; }
+.cityswitch .cs-soon[aria-expanded="true"] { border-color: var(--muted); color: var(--text); }
+.cs-badge { font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 1px 7px; border-radius: 999px;
+            border: 1px solid var(--line); color: var(--muted); }
+.cs-badge.live { color: var(--free); border-color: color-mix(in srgb, var(--free) 55%, transparent); }
+.cs-msg { margin: 6px 0 0; font-size: 13px; line-height: 1.4; color: var(--muted); max-width: 46ch; }
+.cs-msg[hidden] { display: none; }

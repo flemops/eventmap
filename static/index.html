@@ -33,11 +33,10 @@
   <div class="bar">
     <a class="brand" href="%%HOME_URL%%" id="brand">EventMap</a>
     <div class="switchers">
-      <label class="sw"><span class="sr" id="lbl-city"></span>
-        <select id="city-select" class="chip" aria-labelledby="lbl-city"></select></label>
       <nav id="lang-links" class="langs" aria-label="Language"></nav>
     </div>
   </div>
+  %%CITY_SWITCH%%
   <h1 id="h1">%%H1%% <span class="count" id="count" aria-live="polite"></span></h1>
   <div class="row" id="when" role="group" aria-label="When">
     <button class="chip" type="button" data-when="today" aria-pressed="true"></button>
@@ -77,6 +76,7 @@
 <script src="/static/vendor/markercluster/leaflet.markercluster.js"></script>
 <script src="/static/i18n.js?v=%%V%%"></script>
 <script src="/static/common.js?v=%%V%%"></script>
+<script src="/static/cityswitch.js?v=%%V%%" defer></script>
 <script src="/static/app.js?v=%%V%%"></script>
 </body>
 </html>
