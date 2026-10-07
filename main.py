@@ -192,6 +192,8 @@ def _persist(results, by_key, fetchers, started):
                     sum(1 for e in events if e.lat is None)) if prev else None
                 if why and (prev.get("quarantine_streak") or 0) < pipeline.QUARANTINE_MAX_STREAK:
                     streak = db.record_source_quarantine(con, r.name, why, started, city_id=city_id)
+                    db.record_history(con, r.name, city_id, outcome="quarantined", events=len(events),
+                                      duration_s=r.duration_s, error=why, release=_COMMIT, now=started)
                     log.warning("source %s : lot mis en quarantaine (%d/%d) — %s", r.name, streak,
                                 pipeline.QUARANTINE_MAX_STREAK, why)
                     continue
@@ -203,6 +205,8 @@ def _persist(results, by_key, fetchers, started):
                 db.record_source_health(con, r.name, len(r.events), started, city_id=city_id,
                                         valid=len(events),
                                         geo_missing=sum(1 for e in events if e.lat is None))
+                db.record_history(con, r.name, city_id, outcome="ok", events=len(events), duration_s=r.duration_s,
+                                  error=None, release=_COMMIT, now=started)
                 # Un 304 ne renvoie rien : on ne purge surtout pas.
                 # Une source qui reussit mais renvoie ZERO non plus :
                 # `purge_stale` effacerait tout son contenu, et c'est
@@ -216,6 +220,8 @@ def _persist(results, by_key, fetchers, started):
                                 "repond OK — purge annulee", r.name)
             else:
                 db.record_source_failure(con, r.name, r.error or "", started, city_id=city_id)
+                db.record_history(con, r.name, city_id, outcome="failed", events=0, duration_s=r.duration_s,
+                                  error=r.error, release=_COMMIT, now=started)
                 if is_feed:
                     disabled = db.mark_feed(con, r.name, ok=False, error=r.error)
                     if disabled:
@@ -731,6 +737,15 @@ def compute_alerts(con, now: datetime) -> list[dict]:
             out.append({"kind": "source_breaker", "city": f["city_id"], "source": f["feed_id"],
                         "detail": f'coupée par le breaker (niveau {f["breaker_level"]}, reprise à partir de {f["breaker_until"]})'})
     return out
+
+
+@app.get("/api/health/history")
+def api_health_history(days: int = Query(14, ge=1, le=db.HISTORY_DAYS)):
+    """Historique quotidien de santé par ville et source (14.19) : cycles, réussites, échecs, quarantaines, version servie."""
+    with db.session() as con:
+        rows = con.execute("SELECT * FROM source_health_history WHERE day >= date('now', ?) ORDER BY day DESC, city_id, source",
+                           (f"-{days} days",)).fetchall()
+    return {"days": days, "rows": [dict(r) for r in rows]}
 
 
 @app.get("/health")

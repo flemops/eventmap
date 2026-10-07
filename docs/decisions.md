@@ -479,5 +479,7 @@ d'un tel échantillon ; relire ce tableau après quelques centaines d'ouvertures
   sondée : tous testés (`test_phase14_garde_fous.py`, `test_core.py`). Processus tué = `Restart=always` ; mauvais déploiement = rollback par
   tag ; nginx invalide = `nginx -t` avant reload (runbook).
 
-**Reste (ni sans VM, ni sans temps)** : 14.19 (historique *persistant* de santé : `source_health` ne garde que l'état courant),
-et tout ce qui s'exécute sur la VM (14.0, 14.3, 14.9, 14.10, 14.15–14.17, 14.28).
+* **Historique de santé (14.19)** — table `source_health_history` : une ligne par jour, ville et source (cycles, réussites, échecs, lots
+  écartés, dernier succès/échec, durée, volume, commit servi), 90 jours conservés, lisible via `GET /api/health/history?days=14`.
+
+**Reste** : tout ce qui s'exécute sur la VM (14.0, 14.3, 14.9, 14.10, 14.15–14.17, 14.28).

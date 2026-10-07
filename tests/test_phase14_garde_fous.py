@@ -267,3 +267,18 @@ def test_base_perdue_se_reconstruit_sans_edition_manuelle(tmp_path):
     con.commit()
     assert con.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 5
     con.close()
+
+
+def test_historique_de_sante_cumule_les_cycles_du_jour(base):
+    """14.19 : un cycle réussi puis un lot écarté puis un échec = une ligne du jour, compteurs et dernier état justes."""
+    t0 = datetime.now(UTC)
+    main._persist([sources.SourceResult(name="qfap", events=_evs(60))], _by_key(), {}, t0)
+    _cycle(5, t0 + timedelta(minutes=1))                                       # effondré : quarantaine
+    main._persist([sources.SourceResult(name="qfap", events=[], error="TimeoutError")], _by_key(), {}, t0 + timedelta(minutes=2))
+    con = db.connect(base)
+    r = dict(con.execute("SELECT * FROM source_health_history WHERE source='qfap'").fetchone())
+    assert (r["runs"], r["ok"], r["quarantined"], r["failed"]) == (3, 1, 1, 1)
+    assert r["last_error"] == "TimeoutError" and r["last_ok"] and r["last_failure"]
+    from fastapi.testclient import TestClient
+    assert TestClient(main.app).get("/api/health/history").json()["rows"][0]["source"] == "qfap"
+    con.close()
