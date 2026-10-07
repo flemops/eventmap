@@ -9,6 +9,24 @@ log() { logger -t eventmap-watchdog "$*"; [ "$DRY" = 1 ] && echo "$*"; }
 restart() { log "redemarrage eventmap ($1)"; [ "$DRY" = 1 ] || systemctl restart eventmap; }
 if curl -sf --max-time 10 -o "$ST/h.json" "$URL"; then
   echo 0 > "$ST/fails"
+  # 14.8 : corruption SQLite confirmee 3 minutes de suite (alerte db_integrity de /health = PRAGMA quick_check) ->
+  # base mise de cote (jamais supprimee), service relance : le schema est recree et les sources repeuplent la base
+  # (docs/runbook.md §3, test_base_perdue_se_reconstruit_sans_edition_manuelle). 1 fois / 24 h au plus.
+  if grep -q '"kind":"db_integrity"' "$ST/h.json"; then
+    c=$(( $(cat "$ST/dbfails" 2>/dev/null || echo 0) + 1 )); echo "$c" > "$ST/dbfails"; log "db_integrity ($c/3)"
+    if [ "$c" -ge 3 ]; then
+      echo 0 > "$ST/dbfails"; last=$(cat "$ST/dbheal" 2>/dev/null || echo 0)
+      if [ $((now-last)) -gt 86400 ]; then
+        echo "$now" > "$ST/dbheal"; DB=${DB:-/opt/eventmap/data/eventmap.db}
+        log "base corrompue : mise de cote puis reconstruction depuis les sources"
+        if [ "$DRY" != 1 ]; then
+          systemctl stop eventmap
+          for f in "$DB" "$DB-wal" "$DB-shm"; do [ -e "$f" ] && mv "$f" "$f.abimee-$now"; done
+          systemctl start eventmap
+        fi
+      else log "base corrompue mais deja traitee il y a moins de 24 h : aucune action"; fi
+    fi
+  else echo 0 > "$ST/dbfails"; fi
   if grep -q '"kind":"refresh_stalled"' "$ST/h.json"; then
     last=$(cat "$ST/stalled" 2>/dev/null || echo 0)
     if [ $((now-last)) -gt 21600 ]; then echo "$now" > "$ST/stalled"; restart refresh_stalled; fi
