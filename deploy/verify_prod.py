@@ -128,7 +128,8 @@ for path in ("/", "/paris", "/paris/carte", f"/paris/e/{eid}"):
 # --- contenu des pages (SEO, partage, sécurité) --------------------------------------------------------------
 st, dt, body, hd = req("/paris/carte")
 html = body.decode("utf-8")
-check("canonical /paris/carte", f'rel="canonical" href="{P}/paris/carte"' in html)
+# /paris/carte et l'accueil servent la même carte : le canonical pointe vers l'accueil (eventmap#37).
+check("canonical /paris/carte -> accueil", f'rel="canonical" href="{P}/"' in html)
 check("balises de partage", all(x in html for x in ('property="og:title"', 'name="twitter:card"', 'name="description"')))
 check("pas de noindex", "noindex" not in html)
 ld = re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
