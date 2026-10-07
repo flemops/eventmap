@@ -148,8 +148,8 @@ The **code licence** and the **data licences** are separate things.
   (title, date, place and a link back only). Attribution is shown in the app.
 * **Policy**: no scraping without explicit rights. Sources whose terms forbid reuse are *declared and disabled*
   with the evidence, so the decision is auditable ([`docs/jeddah-sources.md`](docs/jeddah-sources.md)).
-* **Code**: no licence file is committed yet — the choice belongs to the owner
-  ([options in `docs/public-readiness.md`](docs/public-readiness.md)). Until then, all rights reserved.
+* **Code**: [MIT](LICENSE) (chosen 07/10/2026; options considered in [`docs/public-readiness.md`](docs/public-readiness.md)).
+  Data licences stay those of each source.
 
 ## Trade-offs and decisions
 
