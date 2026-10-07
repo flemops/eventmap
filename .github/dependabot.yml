@@ -1,13 +1,5 @@
-# Une PR groupée par mois pour les dépendances Python : pas de bruit quotidien.
-# Les versions de requirements*.txt sont épinglées en == (voir l'en-tête de requirements.txt :
-# le rollback réinstalle exactement ces versions) — Dependabot propose le nouvel épinglage.
-#
-# Écosystème `github-actions` volontairement ABSENT : le workflow réutilisable `flemops/ci-templates`
-# (dépôt privé) est invisible de Dependabot, et son job échoue entièrement (« Repository not found »)
-# même avec `ignore:` (constaté le 06/10/2026). Les actions sont épinglées sur des SHA (test
-# `test_toute_action_tierce_est_epinglee_sur_un_sha`) et se mettent à jour à la main, par revue
-# trimestrielle. Réactiver ici dès que Dependabot a accès à ci-templates (réglage de ce dépôt
-# privé) ou que le dépôt devient public : décision D19, docs/release.md.
+# Une PR groupée par mois pour les dépendances Python et les GitHub Actions.
+# Les versions de requirements*.txt restent épinglées en == ; Dependabot propose le nouvel épinglage.
 version: 2
 updates:
   - package-ecosystem: pip
@@ -18,3 +10,11 @@ updates:
       python-deps:
         patterns: ["*"]
     open-pull-requests-limit: 3
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 2
