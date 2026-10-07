@@ -100,6 +100,9 @@ def test_pas_de_debordement_et_axe_sans_violation_grave(page, base_url, width):
     page.goto(base_url + WEEK)
     page.wait_for_selector("#list button.ev")
     assert page.evaluate("document.documentElement.scrollWidth") <= width
+    # Une transition CSS en cours (chip qui change de fond) fausse la mesure de contraste : un échec intermittent en CI.
+    page.add_style_tag(content="*, *::before, *::after { transition: none !important; animation: none !important; }")
+    page.wait_for_timeout(300)
     res = Axe().run(page)
     graves = [v for v in res.response["violations"] if v["impact"] in ("serious", "critical")]
     assert not graves, [(v["id"], v["impact"], [n["target"] for n in v["nodes"]][:3]) for v in graves]
