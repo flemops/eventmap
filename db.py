@@ -72,6 +72,24 @@ CREATE TABLE IF NOT EXISTS funnel (
     PRIMARY KEY (day, city_id, step)
 );
 
+-- Historique de santé (14.19) : une ligne par jour, ville et source ; l'état courant reste dans source_health.
+CREATE TABLE IF NOT EXISTS source_health_history (
+    day         TEXT NOT NULL,
+    city_id     TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    runs        INTEGER NOT NULL DEFAULT 0,
+    ok          INTEGER NOT NULL DEFAULT 0,
+    failed      INTEGER NOT NULL DEFAULT 0,
+    quarantined INTEGER NOT NULL DEFAULT 0,
+    last_ok     TEXT,
+    last_failure TEXT,
+    last_events INTEGER,
+    last_duration_s REAL,
+    last_error  TEXT,
+    release     TEXT,
+    PRIMARY KEY (day, city_id, source)
+);
+
 CREATE TABLE IF NOT EXISTS source_health (
     source        TEXT PRIMARY KEY,
     last_count    INTEGER NOT NULL DEFAULT 0,
@@ -638,6 +656,29 @@ def free_space_mb(path: str | None = None) -> float | None:
         return shutil.disk_usage(os.path.dirname(os.path.abspath(path or DB_PATH))).free / 1048576
     except OSError:
         return None
+
+
+HISTORY_DAYS = 90
+
+
+def record_history(con: sqlite3.Connection, source: str, city_id: str | None, *, outcome: str, events: int,
+                   duration_s: float, error: str | None, release: str | None, now: datetime) -> None:
+    """Un cycle de plus dans l'historique du jour. `outcome` : ok | failed | quarantined. Aucun secret ni message brut :
+    l'erreur est tronquée comme dans source_health."""
+    day, ts = now.date().isoformat(), _iso(now)
+    con.execute(
+        """INSERT INTO source_health_history (day, city_id, source, runs, ok, failed, quarantined, last_ok, last_failure,
+                                              last_events, last_duration_s, last_error, release)
+           VALUES (:day, :city, :src, 1, :ok, :failed, :quar, :last_ok, :last_failure, :events, :dur, :err, :rel)
+           ON CONFLICT (day, city_id, source) DO UPDATE SET
+               runs = runs + 1, ok = ok + :ok, failed = failed + :failed, quarantined = quarantined + :quar,
+               last_ok = COALESCE(:last_ok, last_ok), last_failure = COALESCE(:last_failure, last_failure),
+               last_events = :events, last_duration_s = :dur, last_error = :err, release = :rel""",
+        {"day": day, "city": city_id or "", "src": source, "ok": int(outcome == "ok"), "failed": int(outcome == "failed"),
+         "quar": int(outcome == "quarantined"), "last_ok": ts if outcome == "ok" else None,
+         "last_failure": ts if outcome == "failed" else None, "events": events, "dur": round(duration_s, 2),
+         "err": (error or None) and error[:300], "rel": release})
+    con.execute("DELETE FROM source_health_history WHERE day < date(?, ?)", (day, f"-{HISTORY_DAYS} days"))
 
 
 def checkpoint(con: sqlite3.Connection) -> None:
