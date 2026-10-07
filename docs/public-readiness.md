@@ -1,6 +1,6 @@
 # Audit « public-ready » (06/10/2026)
 
-**Statut : le dépôt est PRIVÉ. Le passer en public est une décision de son propriétaire** ; ce document
+**Statut : décision prise le 07/10/2026 — licence MIT du code, passage en public autorisé par le propriétaire** (historique d'origine : privé) ; ce document
 dit ce qui a été vérifié, ce qui reste à décider, et ce qu'il faut faire juste avant.
 
 ## Ce qui a été vérifié (historique Git complet, toutes branches)
