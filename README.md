@@ -136,7 +136,7 @@ Only controls that exist in the repository:
   restricted address families, memory and CPU caps ([`deploy/eventmap.service`](deploy/eventmap.service)).
 * **SSRF guard** on every outgoing URL *and every redirect*; scraped text is sanitised and HTML-escaped on output.
 * nginx access logs use a truncated-IP format; there are no accounts and no personal data on the server — the browser keeps only preferences (city, language, saved events) in `localStorage`.
-* CI: secret scan, dependency audit, SBOM, Dependabot for Python dependencies, third-party Actions pinned to commit SHAs (enforced by a test).
+* CI: secret scan, dependency audit, SBOM, Dependabot for Python dependencies and GitHub Actions/reusable workflows, third-party Actions pinned to commit SHAs (enforced by a test).
 
 ## Data sources and licensing
 
