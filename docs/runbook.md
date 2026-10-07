@@ -21,6 +21,8 @@ curl -s "https://eventmap.hamdy-tabsissi.com/health?strict=1" -o /dev/null -w "%
 | `disk_low` / `refresh_failed` « disque presque plein » | cycle suspendu, contenu servi inchangé | libérer de l'espace (logs, anciennes sauvegardes) ; le cycle reprend seul |
 | `refresh_stalled` | — | `sudo systemctl restart eventmap`, puis `journalctl -u eventmap -n 100 --no-pager` |
 
+Rejouer une collecte sans FastAPI (14.3) : `cd /opt/eventmap && sudo -u <user du service> env $(cat /etc/eventmap.env | xargs) .venv/bin/python main.py refresh` — un cycle complet, résumé « n/m sources OK » sur stdout, code de sortie 1 si aucune source n'a répondu. Il n'a pas le verrou du service web : à lancer quand la boucle interne n'est pas en cours (`/health` → `refresh.running` à `false`). Le service garde sa boucle interne (pas de timer séparé : deux collecteurs doubleraient les requêtes aux sources sans problème mesuré).
+
 ## 2. Mauvais déploiement : revenir au commit sain
 
 Voir `release.md` : `git log --first-parent prod`, puis `git tag -f prod <sha-sain> && git push -f origin prod` ; la VM tire le tag.

@@ -681,6 +681,20 @@ def test_health_degrade_si_le_cycle_de_refresh_plante(client, monkeypatch):
     assert "secret" not in str(corps)
 
 
+def test_cli_refresh_code_de_sortie(monkeypatch, capsys):
+    """14.3 : `python main.py refresh` rejoue un cycle hors serveur ; 0 si une source répond, 1 sinon."""
+    def faux(ok):
+        async def _r():
+            return [sources.SourceResult(name="s", events=[], error=None if ok else "boom")]
+        return _r
+    monkeypatch.setattr(main, "_publish_priorities", lambda *_: None)
+    monkeypatch.setattr(main, "refresh", faux(True))
+    assert main.refresh_once() == 0
+    monkeypatch.setattr(main, "refresh", faux(False))
+    assert main.refresh_once() == 1
+    assert "KO s: boom" in capsys.readouterr().out
+
+
 def test_hreflang_et_canonical_disent_la_meme_chose_sur_l_accueil(client):
     """07/10/2026 : après le passage de Paris en en/fr, « / » déclarait canonical « / » mais hreflang
     « /paris » ; et /paris/carte, identique, se déclarait canonique vers lui-même."""
