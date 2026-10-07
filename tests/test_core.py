@@ -516,7 +516,9 @@ def test_pages_publiques_sont_indexables_et_partageables(chemin, client):
     html = client.get(chemin).text
     assert "noindex" not in html
     assert '<meta name="description"' in html
-    assert f'rel="canonical" href="{main.SITE}{chemin}"' in html
+    # Phase 15 : l'accueil de Paris EST la carte ; /paris/carte sert la même page et se déclare
+    # canonique vers « / » (jamais deux pages identiques canoniques chacune pour elle-même).
+    assert f'rel="canonical" href="{main.SITE}/"' in html
     assert 'property="og:title"' in html
     assert 'name="twitter:card"' in html
 
@@ -528,10 +530,11 @@ def test_sitemap_liste_les_deux_pages(client):
     r = client.get("/sitemap.xml")
     assert r.status_code == 200
     assert "xml" in r.headers["content-type"]
-    assert r.text.count("<loc>") == 4          # EN (défaut) + FR : / , /paris/carte , /fr/paris , /fr/paris/carte
+    # EN (défaut) + FR : « / » et /fr/paris ; /carte est un doublon de l'accueil (même canonical), absent du sitemap.
+    assert r.text.count("<loc>") == 2
     assert f"<loc>{main.SITE}/</loc>" in r.text
-    assert f"<loc>{main.SITE}/paris/carte</loc>" in r.text
-    assert f"<loc>{main.SITE}/fr/paris/carte</loc>" in r.text
+    assert f"<loc>{main.SITE}/fr/paris</loc>" in r.text
+    assert "/carte" not in r.text
 
 
 def test_ancienne_url_carte_est_redirigee_definitivement(client):
@@ -635,3 +638,18 @@ def test_health_degrade_si_le_cycle_de_refresh_plante(client, monkeypatch):
     assert corps["status"] == "degraded"
     assert corps["refresh"]["last_results"][0]["source"] == "refresh"
     assert "secret" not in str(corps)
+
+
+def test_hreflang_et_canonical_disent_la_meme_chose_sur_l_accueil(client):
+    """07/10/2026 : après le passage de Paris en en/fr, « / » déclarait canonical « / » mais hreflang
+    « /paris » ; et /paris/carte, identique, se déclarait canonique vers lui-même."""
+    import re
+    site = main.SITE
+    for chemin in ("/", "/paris", "/paris/carte"):
+        h = client.get(chemin).text
+        assert f'rel="canonical" href="{site}/"' in h, chemin
+        assert f'hreflang="en" href="{site}/"' in h and f'hreflang="x-default" href="{site}/"' in h, chemin
+        assert f'hreflang="fr" href="{site}/fr/paris"' in h, chemin
+    fr = client.get("/fr/paris/carte").text
+    assert f'rel="canonical" href="{site}/fr/paris"' in fr
+    assert not re.search(r'hreflang="[a-z-]+" href="[^"]*/carte', fr)
