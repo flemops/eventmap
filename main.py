@@ -325,6 +325,22 @@ async def refresh_loop() -> None:
         await asyncio.sleep(REFRESH_INTERVAL)
 
 
+def refresh_once() -> int:
+    """Un cycle hors serveur (`python main.py refresh`) : rejouer ou réparer une collecte sans FastAPI (14.3).
+
+    Code de sortie : 0 si au moins une source a répondu, 1 sinon (cycle suspendu, plantage ou tout en échec).
+    """
+    db.connect().close()
+    _publish_priorities(registry.load())
+    results = asyncio.run(refresh())
+    ok = sum(1 for r in results if r.ok)
+    print(f"{ok}/{len(results)} sources OK")
+    for r in results:
+        if not r.ok:
+            print(f"  KO {r.name}: {r.error}")
+    return 0 if ok else 1
+
+
 # ---------------------------------------------------------------------- app
 
 @asynccontextmanager
@@ -855,3 +871,11 @@ def city_pages(a: str, b: str | None = None, c: str | None = None, d: str | None
     if page is None:
         return render.not_found_page()
     return page
+
+
+if __name__ == "__main__":
+    import sys
+    if sys.argv[1:] == ["refresh"]:
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        raise SystemExit(refresh_once())
+    raise SystemExit("usage : python main.py refresh")
