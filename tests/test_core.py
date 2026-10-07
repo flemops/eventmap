@@ -231,8 +231,49 @@ def test_mark_feed_disables_after_max_errors(con, monkeypatch):
     assert not db.mark_feed(con, "https://x/a.ics", ok=False, error="boom")
     assert db.mark_feed(con, "https://x/a.ics", ok=False, error="boom")       # 3e échec → désactivé
     assert db.list_feeds(con, enabled_only=True) == []
+    # Une seule réussite ne referme pas le breaker (voir test_breaker_*) ; l'état d'erreur reste visible.
     db.mark_feed(con, "https://x/a.ics", ok=True)
-    assert db.list_feeds(con, enabled_only=False)[0]["error_count"] == 0
+    assert db.list_feeds(con, enabled_only=False)[0]["error_count"] == 3
+
+
+def _trip(con, url="https://x/a.ics", n=3):
+    for _ in range(n):
+        db.mark_feed(con, url, ok=False, error="boom")
+
+
+def test_breaker_coupe_temporairement_puis_sonde(con, monkeypatch):
+    """14.7 : coupure temporaire, sonde après le délai, réouverture après plusieurs succès consécutifs."""
+    monkeypatch.setattr(db, "FEED_MAX_ERRORS", 3)
+    db.upsert_feed(con, "https://x/a.ics", "ics")
+    _trip(con)
+    f = db.breaker_open(con)[0]
+    assert f["breaker_level"] == 1 and db.feeds_to_probe(con) == []            # coupée, pas encore à sonder
+    later = datetime.now(timezone.utc) + timedelta(hours=7)
+    assert [x["url"] for x in db.feeds_to_probe(con, later)] == ["https://x/a.ics"]
+    db.mark_feed(con, "https://x/a.ics", ok=True)                              # 1re sonde réussie : toujours coupée
+    assert db.list_feeds(con, enabled_only=True) == [] and db.breaker_open(con)[0]["probe_ok"] == 1
+    db.mark_feed(con, "https://x/a.ics", ok=True)                              # 2e : refermée
+    assert [x["url"] for x in db.list_feeds(con, enabled_only=True)] == ["https://x/a.ics"]
+    assert db.breaker_open(con) == [] and db.list_feeds(con, enabled_only=False)[0]["error_count"] == 0
+
+
+def test_breaker_sonde_ratee_rallonge_la_coupure_et_ne_depasse_pas_le_plafond(con, monkeypatch):
+    monkeypatch.setattr(db, "FEED_MAX_ERRORS", 3)
+    db.upsert_feed(con, "https://x/a.ics", "ics")
+    _trip(con)
+    niveaux = []
+    for _ in range(6):
+        assert db.mark_feed(con, "https://x/a.ics", ok=False, error="toujours mort")   # sonde ratée = recoupe
+        f = db.breaker_open(con)[0]
+        niveaux.append(f["breaker_level"])
+        assert datetime.fromisoformat(f["breaker_until"]) - datetime.now(timezone.utc) <= timedelta(hours=db.BREAKER_MAX_H, seconds=5)
+    assert niveaux == sorted(niveaux) and max(niveaux) == 5
+
+
+def test_breaker_ne_reactive_jamais_une_source_eteinte_a_la_main(con):
+    db.upsert_feed(con, "https://x/m.ics", "ics")
+    con.execute("UPDATE feeds SET enabled = 0 WHERE url = 'https://x/m.ics'")
+    assert db.feeds_to_probe(con, datetime.now(timezone.utc) + timedelta(days=30)) == []
 
 
 # ----------------------------------------------------------- agrégation

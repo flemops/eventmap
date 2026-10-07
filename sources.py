@@ -17,6 +17,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import random
 import re
 import time
 from collections import defaultdict
@@ -411,7 +412,8 @@ async def aggregate(fetchers: dict[str, Fetcher], *, concurrency: int = 4,
                     if isinstance(exc, safety.UnsafeUrl) or _is_client_error(exc):
                         break
                     if attempt + 1 < attempts:
-                        await asyncio.sleep(min(30.0, 2.0 ** (attempt + 1)))
+                        # Gigue (±25 %) : des sources en panne ensemble ne se ré-interrogent pas toutes au même instant.
+                        await asyncio.sleep(min(30.0, 2.0 ** (attempt + 1)) * random.uniform(0.75, 1.25))
             return SourceResult(name, [], error=err, duration_s=time.monotonic() - t0)
 
     async with PoliteClient(intervals=intervals) as client:

@@ -51,6 +51,8 @@ logging.basicConfig(
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 REFRESH_INTERVAL = int(os.environ.get("EVENTMAP_REFRESH_SECONDS", str(6 * 3600)))
+# Seuil d espace libre avant d ecrire (14.18) : sous ce seuil le cycle de refresh est suspendu, a 2x une alerte disk_low est levee.
+MIN_FREE_MB = int(os.environ.get("EVENTMAP_MIN_FREE_MB", "200"))
 TZ = ZoneInfo("Europe/Paris")          # conservé pour les tests historiques : Paris est la ville par défaut
 SITE = "https://eventmap.hamdy-tabsissi.com"
 
@@ -91,6 +93,8 @@ def _build_fetchers(con, now: datetime | None = None
                            city_id=spec.city_id)
 
     db_feeds = {f["url"]: f for f in db.list_feeds(con, enabled_only=True)}
+    # Circuit breaker (14.7) : une source coupée temporairement est sondée dès que son délai est écoulé.
+    db_feeds.update({f["url"]: f for f in db.feeds_to_probe(con, now)})
 
     for spec in specs:
         reason = spec.why_not()
@@ -223,6 +227,8 @@ def _persist(results, by_key, fetchers, started):
         n = db.upsert_events(con, all_events)
         dedup_counts = sources.dedup_inter_source(con, now=started)
         purged = db.purge_past(con)
+    with db.session() as con:          # hors de la transaction d'écriture : un checkpoint y serait refusé
+        db.checkpoint(con)
     return len(all_events), n, dedup_counts, purged, dropped_total
 
 
@@ -237,6 +243,14 @@ async def refresh() -> list[sources.SourceResult]:
         started = datetime.now(timezone.utc)
         t0 = time.monotonic()
         try:
+            free = db.free_space_mb()
+            if free is not None and free < MIN_FREE_MB:
+                # Garde avant écriture (14.18) : un disque plein corrompt une écriture en cours ; on suspend le cycle,
+                # on garde ce qui est servi, et /health le dit (refresh_failed + disk_low).
+                log.error("refresh suspendu : %.0f Mo libres (< %d Mo)", free, MIN_FREE_MB)
+                _refresh_state["last_results"] = [{"source": "refresh", "ok": False, "events": 0, "duration_s": 0.0,
+                                                   "error": "cycle suspendu : disque presque plein"}]
+                return []
             with db.session() as con:
                 fetchers, by_key = _build_fetchers(con, started)
             _publish_priorities(registry.load())
@@ -438,7 +452,7 @@ def _data_state(con, city: cities.City, now: datetime) -> dict:
             items.append({"id": s.id, "ok": None, "data_age_h": None, "error": False})
             continue
         age = r.get("data_age_h")
-        late = (age is not None and age > city.stale_after_hours) or r.get("error_streak", 0) >= 2
+        late = (age is not None and age > (s.stale_after_hours or city.stale_after_hours)) or r.get("error_streak", 0) >= 2
         items.append({"id": s.id, "ok": not late, "data_age_h": age,
                       "error": bool(r.get("last_error") and r.get("error_streak", 0) > 0)})
     known = [i for i in items if i["ok"] is not None]
@@ -655,6 +669,8 @@ def compute_alerts(con, now: datetime) -> list[dict]:
       geocoding         plus de 30 % des evenements valides sans coordonnees ;
       quarantine        des lots anormaux sont ecartes depuis 2 cycles (le dernier contenu sain reste servi) ;
       db_integrity      `PRAGMA quick_check` ne repond pas « ok ».
+      disk_low          moins de 2 x EVENTMAP_MIN_FREE_MB libres sur le volume de la base (le cycle est suspendu sous 1 x).
+      source_breaker    une source est coupee par le circuit breaker depuis plus d une coupure (indisponible durablement ; une premiere coupure se repare seule).
 
     Seules les villes ALLUMEES comptent : une ville eteinte, ou une source non autorisee,
     n'est pas une panne.
@@ -672,6 +688,10 @@ def compute_alerts(con, now: datetime) -> list[dict]:
                     "detail": "aucun cycle depuis le demarrage"})
     if any(r.get("source") == "refresh" and not r.get("ok") for r in _refresh_state.get("last_results", [])):
         out.append({"kind": "refresh_failed", "city": None, "source": None, "detail": "cycle interrompu"})
+
+    free = db.free_space_mb()
+    if free is not None and free < MIN_FREE_MB * 2:
+        out.append({"kind": "disk_low", "city": None, "source": None, "detail": f"{free:.0f} Mo libres"})
 
     verdict = db.integrity(con)
     if verdict != "ok":
@@ -694,15 +714,22 @@ def compute_alerts(con, now: datetime) -> list[dict]:
             if (r.get("empty_streak") or 0) >= 2:
                 out.append({**base, "kind": "silent_source", "detail": f'{r["empty_streak"]} cycles vides'})
             age_h = r.get("data_age_h")
-            if age_h is not None and age_h > c.stale_after_hours:
+            seuil = s.stale_after_hours or c.stale_after_hours
+            if age_h is not None and age_h > seuil:
                 out.append({**base, "kind": "stale_data",
-                            "detail": f"donnee vieille de {age_h} h (seuil {c.stale_after_hours} h)"})
+                            "detail": f"donnee vieille de {age_h} h (seuil {seuil} h)"})
             if (r.get("quarantine_streak") or 0) >= 2:
                 out.append({**base, "kind": "quarantine",
                             "detail": f'{r["quarantine_streak"]} lots ecartes : {r.get("quarantine_reason")}'})
             valid = r.get("last_valid") or 0
             if valid >= 10 and (r.get("geo_missing") or 0) / valid > 0.3:
                 out.append({**base, "kind": "geocoding", "detail": f'{r["geo_missing"]}/{valid} sans coordonnees'})
+    # Source coupée par le circuit breaker plus d'une fois de suite = indisponible durablement (14.20) :
+    # une première coupure (6 h) se répare seule et ne dérange personne.
+    for f in db.breaker_open(con):
+        if f["breaker_level"] >= 2:
+            out.append({"kind": "source_breaker", "city": f["city_id"], "source": f["feed_id"],
+                        "detail": f'coupée par le breaker (niveau {f["breaker_level"]}, reprise à partir de {f["breaker_until"]})'})
     return out
 
 

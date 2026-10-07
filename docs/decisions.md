@@ -455,3 +455,29 @@ et en-têtes/CSP vérifiés sur le service réel par `deploy/verify_prod.py`.
 Lecture du 07/10/2026 : 17 ouvertures de ville, 1 ouverture d'événement, aucune de « top pick ». **Volume insuffisant pour
 conclure** (et ces compteurs contiennent des visites de vérification faites ce jour-là) : ne tirer aucune décision produit
 d'un tel échantillon ; relire ce tableau après quelques centaines d'ouvertures de ville.
+
+## D23 — Phase 14 (suite, sans VM) : zéro-touch, circuit breaker, garde disque, alertes anti-bruit
+
+**Décision (07/10/2026).**
+* **Zéro-touch (14.1)** — en fonctionnement normal, Hamdy ne fait *rien* de quotidien : collecte (timer interne), nettoyage
+  (`purge_past`, `purge_stale`), service, déploiement (merge → tag `prod` → la VM tire) et surveillance (`/health`,
+  `verify_prod`, issue `alerte-donnees`). Une action humaine n'existe que pour les lignes du `runbook.md`.
+* **Pas de LLM en exploitation (14.2)** — tout est déterministe : retries, quarantaine, breaker, last-known-good, rollback.
+  Un défaut de code non récupérable garde le dernier déploiement sain et lève une alerte ; aucune IA ne modifie la production.
+* **Politique par source (14.4)** — `feeds.yaml` : `refresh_hours`, `timeout_s`, `retries` (attente exponentielle plafonnée à 30 s
+  **avec gigue ±25 %**), `min_interval_s`, `stale_after_hours` (optionnel, sinon la ville). Seuils d'anomalie du lot :
+  constantes `QUARANTINE_*` de `pipeline.py` (communs, volontairement larges).
+* **Circuit breaker (14.7)** — après `FEED_MAX_ERRORS` (5) échecs la source est coupée 6 h, sans toucher aux autres ni aux villes ;
+  chaque sonde ratée double la coupure (plafond 24 h) ; **2 sondes réussies de suite** la remettent en service. Une source éteinte à
+  la main n'est jamais rallumée. (Avant : désactivation définitive, à rallumer à la main.)
+* **Garde disque et entretien (14.18)** — sous `EVENTMAP_MIN_FREE_MB` (200) le cycle de refresh est suspendu (le contenu servi reste) ;
+  alerte `disk_low` à 2× le seuil ; `PRAGMA wal_checkpoint(PASSIVE)` après chaque cycle ; purge des événements expirés déjà en place.
+* **Alertes anti-bruit (14.20)** — `ingestion_errors` ≥ 3 cycles, `quarantine` ≥ 2 lots, `source_breaker` à partir du **2ᵉ** niveau
+  (une première coupure se répare seule), `db_integrity`, `disk_low`, `refresh_failed/stalled`. Un échec transitoire déjà corrigé n'alerte pas.
+* **Base reconstructible (14.24)** et **scénarios de panne (14.25/14.26)** : base perdue → schéma recréé + repeuplement au premier cycle ;
+  source HTTP morte, 0 événement, timeout, lot effondré, base verrouillée, base corrompue, disque presque plein, source coupée puis
+  sondée : tous testés (`test_phase14_garde_fous.py`, `test_core.py`). Processus tué = `Restart=always` ; mauvais déploiement = rollback par
+  tag ; nginx invalide = `nginx -t` avant reload (runbook).
+
+**Reste (ni sans VM, ni sans temps)** : 14.19 (historique *persistant* de santé : `source_health` ne garde que l'état courant),
+et tout ce qui s'exécute sur la VM (14.0, 14.3, 14.9, 14.10, 14.15–14.17, 14.28).
