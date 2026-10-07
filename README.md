@@ -120,7 +120,7 @@ GitHub Actions.** No build step, no front-end framework, no external service to 
   ([`e2e.yml`](.github/workflows/e2e.yml)).
 * **CI on every PR** ([`ci.yml`](.github/workflows/ci.yml)): Ruff, tests + coverage, Python 3.12 / 3.13, `pip-audit` +
   SBOM, gitleaks. **On `master`** ([`prod-tag.yml`](.github/workflows/prod-tag.yml)): the same checks on the production
-  Python, a "production dependencies alone are enough" check, then the `prod` tag moves and the VM pulls it.
+  Python, a "production dependencies alone are enough" check, then the `prod` tag moves and the VM pulls it. The reusable gate is the public [`flemops/ci-templates`](https://github.com/flemops/ci-templates).
 * **Post-deploy verification** ([`post-deploy.yml`](.github/workflows/post-deploy.yml)): waits for the expected commit to be
   live (`/health` → `release.commit`), then replays [`deploy/verify_prod.py`](deploy/verify_prod.py) read-only against production.
 * **Monitoring**: a scheduled workflow ([`surveillance.yml`](.github/workflows/surveillance.yml)) probes `/health` (availability)
@@ -190,7 +190,7 @@ tied to **measured thresholds** (latency p95, rows per city, write contention, c
 * Browser tests cover the main journeys, not pixel-level visual regression or a real screen reader (manual); single node, no high
   availability. On a throttled CPU (×4) the first event card takes about 11 s ([`docs/performance.md`](docs/performance.md)):
   a mobile-performance pass is the next step.
-* Branch protection is not enabled (not available on the current GitHub plan for a private repository).
+* Branch protection on `master` requires four green checks (lint + tests/coverage on 3.12, tests on 3.13, secret scan, dependency audit + SBOM) but no pull-request review: a single maintainer, so no second reviewer exists. Verified through the GitHub API on 07/10/2026.
 
 ## Run it locally
 
