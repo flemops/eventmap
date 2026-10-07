@@ -680,8 +680,9 @@ def test_jeddah_eteinte_rend_404_et_n_est_pas_dans_le_sitemap(client):
 def test_pages_de_jeddah_langues_et_sens(client, jeddah_on):
     en = client.get("/jeddah/carte").text
     assert '<html lang="en" dir="ltr">' in en
-    assert 'rel="canonical" href="https://eventmap.hamdy-tabsissi.com/jeddah/carte"' in en
-    assert 'hreflang="ar" href="https://eventmap.hamdy-tabsissi.com/ar/jeddah/carte"' in en
+    # L'accueil de Jeddah EST la carte : /jeddah/carte est le même document, canonique vers /jeddah.
+    assert 'rel="canonical" href="https://eventmap.hamdy-tabsissi.com/jeddah"' in en
+    assert 'hreflang="ar" href="https://eventmap.hamdy-tabsissi.com/ar/jeddah"' in en
     assert 'hreflang="x-default"' in en and "Tonight in Jeddah" in en
     ar = client.get("/ar/jeddah/carte").text
     assert '<html lang="ar" dir="rtl">' in ar and "هذا المساء في جدة" in ar
@@ -696,8 +697,9 @@ def test_choix_de_ville_quand_il_y_en_a_deux(client, jeddah_on):
     assert "More cities coming soon" in html
     assert 'rel="canonical" href="https://eventmap.hamdy-tabsissi.com/"' in html
     sm = client.get("/sitemap.xml").text
-    for chemin in ("/", "/paris", "/paris/carte", "/jeddah", "/ar/jeddah", "/jeddah/carte", "/ar/jeddah/carte"):
+    for chemin in ("/", "/paris", "/fr/paris", "/jeddah", "/ar/jeddah"):
         assert f"<loc>https://eventmap.hamdy-tabsissi.com{chemin}</loc>" in sm
+    assert "/carte" not in sm          # doublons de l'accueil (même canonical)
 
 
 def test_contenu_indexable_et_donnees_structurees(client, base_temp, jeddah_on):

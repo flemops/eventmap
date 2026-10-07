@@ -130,9 +130,15 @@ def city_path(city: cities.City, lang: str | None = None, suffix: str = "") -> s
 
 
 def _alternates(site: str, city: cities.City, suffix: str) -> str:
-    links = [f'<link rel="alternate" hreflang="{_esc(lg)}" href="{site}{city_path(city, lg, suffix)}">'
-             for lg in city.languages]
-    links.append(f'<link rel="alternate" hreflang="x-default" href="{site}{city_path(city, None, suffix)}">')
+    def href(lg: str | None) -> str:
+        # Une seule ville allumée : « / » est l'adresse canonique de son accueil (voir _home_canonical) ;
+        # les alternates doivent dire la même chose que le canonical, sinon Google reçoit deux réponses.
+        if suffix == "" and len(cities.all_active()) == 1 and (lg is None or lg == city.default_language):
+            return f"{site}/"
+        return f"{site}{city_path(city, lg, suffix)}"
+
+    links = [f'<link rel="alternate" hreflang="{_esc(lg)}" href="{href(lg)}">' for lg in city.languages]
+    links.append(f'<link rel="alternate" hreflang="x-default" href="{href(None)}">')
     return "\n".join(links) if len(city.languages) > 1 else ""
 
 
@@ -263,6 +269,10 @@ def _city_home(city: cities.City, lang: str, site: str) -> HTMLResponse:
 
 
 def _city_map(city: cities.City, lang: str, site: str) -> HTMLResponse:
+    if city.home == "carte":
+        # L'accueil EST la carte : /{ville}/carte sert la même page, avec le MÊME canonical (celui de
+        # l'accueil) — jamais deux pages identiques qui se déclarent canoniques chacune pour elle-même.
+        return _city_home(city, lang, site)
     s = i18n.strings(lang)
     n = city.name(lang)
     events = _upcoming(city)
@@ -381,7 +391,8 @@ def sitemap_xml(site: str) -> str:
     for c in active:
         for lg in c.languages:
             urls.append(f"{site}{city_path(c, lg)}")
-            urls.append(f"{site}{city_path(c, lg, '/carte')}")
+            if c.home != "carte":              # sinon /carte est un doublon de l'accueil (même canonical)
+                urls.append(f"{site}{city_path(c, lg, '/carte')}")
     if len(active) == 1:
         # « /paris » est servi mais son canonique est « / » : on ne liste que le canonique.
         urls = [u for u in urls if u != f"{site}{city_path(active[0], active[0].default_language)}"]

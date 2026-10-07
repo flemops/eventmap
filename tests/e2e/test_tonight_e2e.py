@@ -86,7 +86,9 @@ def test_sauvegarde_et_persistance(page, base_url):
     page.goto(base_url + WEEK)
     page.wait_for_selector("#list button.ev")
     page.locator("#list button.ev").first.click()
+    page.wait_for_selector("#detail:not([hidden]) #save")
     page.click("#save")
+    page.wait_for_function("document.querySelector('#save').getAttribute('aria-pressed') === 'true'")
     page.reload()
     page.wait_for_selector("#list button.ev")
     assert page.locator("#saved-btn").is_visible() and page.locator("#saved-n").inner_text() == "1"
