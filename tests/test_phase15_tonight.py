@@ -108,3 +108,22 @@ def test_funnel_compte_sans_donnee_personnelle(client):
     with db.session() as con:
         cols = {r["name"] for r in con.execute("PRAGMA table_info(funnel)")}
     assert cols == {"day", "city_id", "step", "n"}      # rien qui identifie une personne
+
+
+def test_taxonomie_premier_niveau_courte_et_sans_groupe_vide():
+    """15.21 : dix groupes au plus, tous les mots-clés de catégorie couverts, aucun groupe orphelin."""
+    import cities
+    import sources
+    groups = cities.DEFAULT_CATEGORY_GROUPS
+    assert len(groups) == 10
+    cats = {c for c, _ in sources.CATEGORY_KEYWORDS} | {"other"}
+    assert {c for v in groups.values() for c in v} == cats          # rien d'oublié, rien d'inventé
+    assert cities.load()["paris"].category_groups == groups          # Paris utilise la taxonomie commune
+
+
+@pytest.mark.parametrize("titre,attendu", [
+    ("Clubbing à la Bellevilloise", "nightlife"), ("DJ set — nuit électro", "nightlife"),
+    ("Club de lecture de la médiathèque", "talk"), ("Concert de jazz", "music")])
+def test_nightlife_sans_faux_positif_sur_club(titre, attendu):
+    import sources
+    assert sources.normalize_category(titre) == attendu

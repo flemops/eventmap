@@ -25,6 +25,14 @@ import yaml
 CITIES_FILE = Path(os.environ.get("EVENTMAP_CITIES", Path(__file__).resolve().parent / "cities.yaml"))
 DEFAULT_CITY = "paris"
 
+# Taxonomie de premier niveau (15.21) : courte, commune à toutes les villes ; une ville peut la
+# remplacer par `category_groups` dans cities.yaml. Les groupes sans événement ne sont pas montrés.
+DEFAULT_CATEGORY_GROUPS: dict[str, tuple[str, ...]] = {
+    "music": ("music",), "nightlife": ("nightlife",), "art-culture": ("expo", "theatre"),
+    "cinema": ("cinema",), "sports": ("sport",), "food-markets": ("market",),
+    "workshops": ("workshop",), "family": ("kids",), "talks": ("talk",), "experiences": ("other",),
+}
+
 _cache: dict[str, City] | None = None
 
 
@@ -128,7 +136,7 @@ def _parse(raw: dict) -> dict[str, City]:
             features=dict(c.get("features") or {}),
             stale_after_hours=int(c.get("stale_after_hours", 48)),
             sources=tuple(c.get("sources") or ()),
-            category_groups={k: tuple(v) for k, v in (c.get("category_groups") or {}).items()},
+            category_groups={k: tuple(v) for k, v in (c.get("category_groups") or DEFAULT_CATEGORY_GROUPS).items()},
             enabled_in_file=bool(c.get("enabled", False)), teaser=bool(c.get("teaser", False)),
         )
         ZoneInfo(c["timezone"])   # échoue tôt si le fuseau est inconnu

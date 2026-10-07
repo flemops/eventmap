@@ -31,7 +31,7 @@ def test_free_et_recherche_filtrent_la_liste(page, base_url):
     page.goto(base_url + WEEK)
     page.wait_for_selector("#list button.ev")
     page.click("#free")                                   # défaut = Free ; bascule vers tous
-    page.wait_for_function("document.querySelectorAll('#list button.ev').length > 4")
+    page.wait_for_selector("#list button.ev:has-text('Expo payante')")
     assert any("Expo payante" in t for t in titles(page))
     page.click("#open-filters")
     page.fill("#fp-search", "expo")
@@ -113,3 +113,54 @@ def test_donnees_difficiles_ne_cassent_pas_la_liste(page, base_url):
     carte = page.locator("#list button.ev", has_text="Cinéma").first
     assert "Free" not in carte.inner_text()
     assert page.errors == []
+
+
+def _event_id(base_url, page, titre):
+    d = page.request.get(f"{base_url}/api/events?city=paris&radius=8&when=week&limit=300&lang=en").json()
+    return next(e["id"] for e in d["events"] if titre in e["title"])
+
+
+def test_lien_externe_invalide_n_est_jamais_affiche(page, base_url):
+    """Un `javascript:` ou une chaîne quelconque ne devient jamais un bouton (deuxième ligne de défense, 15.59)."""
+    page.goto(base_url + WEEK)
+    page.wait_for_selector("#list button.ev")
+    page.locator("#list button.ev", has_text="Lien invalide").first.click()
+    page.wait_for_selector("#detail:not([hidden]) h2")
+    assert page.locator("#detail a:has-text('Directions')").count() == 1
+    assert page.locator("#detail a[href^='javascript'], #detail a:has-text('Official'), #detail a:has-text('Book')").count() == 0
+
+
+def test_lien_partage_ouvre_un_evenement_hors_liste_et_dit_qu_il_est_termine(page, base_url):
+    """Un lien `#e<id>` vers un événement absent de la liste (terminé, ou demain) ouvre quand même sa fiche (15.46)."""
+    ancien = page.request.get(f"{base_url}/api/events/{_event_id_toutes(base_url, page, 'Déjà terminé')}").json()
+    page.goto(f"{base_url}/paris/carte#e{ancien['id']}")
+    page.wait_for_selector("#detail:not([hidden]) h2", timeout=8000)
+    assert "Déjà terminé" in page.locator("#detail h2").inner_text()
+    assert page.locator("#detail .tag.warn").inner_text() == "Ended"
+    page.goto(f"{base_url}/paris/carte#e{_event_id(base_url, page, 'Demain')}")
+    page.reload()                                      # un simple changement de #fragment ne recharge pas la page
+    page.wait_for_selector("#detail:not([hidden]) h2", timeout=8000)
+    assert "Demain" in page.locator("#detail h2").inner_text()
+    assert page.locator("#detail .tag.warn").count() == 0
+
+
+def _event_id_toutes(base_url, page, titre):
+    # Un événement terminé ne sort d'aucune liste : on le retrouve par la base (identifiants consécutifs du seed).
+    for i in range(1, 40):
+        r = page.request.get(f"{base_url}/api/events/{i}")
+        if r.ok and titre in r.json()["title"]:
+            return i
+    raise AssertionError(titre)
+
+
+def test_taxonomie_courte_et_sans_categorie_vide(page, base_url):
+    page.goto(base_url + WEEK)
+    page.wait_for_selector("#list button.ev")
+    page.click("#open-filters")
+    page.wait_for_selector("#fp-cats [data-cat='music']")
+    labels = page.locator("#fp-cats .chip").all_inner_texts()
+    assert labels[0] == "All categories"
+    assert {"Music", "Art & Culture", "Talks & Conferences", "Workshops", "Cinema", "Food & Markets"} <= set(labels)
+    assert "Nightlife" not in labels and "Sports" not in labels          # aucun événement : aucun filtre vide
+    page.click("#fp-cats [data-cat='art-culture']")
+    page.wait_for_function("[...document.querySelectorAll('#list button.ev h3')].length > 0 && [...document.querySelectorAll('#list button.ev h3')].every(h => /Demain/.test(h.textContent))")

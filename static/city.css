@@ -30,6 +30,8 @@ body.carte-page {
 .hero { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--sp-2); }
 h1#h1 { margin: 0; font-size: var(--fs-xl); line-height: 1.2; font-weight: 800; letter-spacing: -.02em; }
 .hero .count { color: var(--muted); font-size: var(--fs-sm); font-weight: 500; }
+/* Ordinateur : la liste annonce déjà « N events » juste au-dessus des cartes ; le doublon à côté du titre est retiré (15.61). Sur mobile la liste est repliée : ce compteur reste. */
+@media (min-width: 900px) { .hero .count { display: none; } }
 .row { display: flex; gap: var(--sp-2); overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .row::-webkit-scrollbar { display: none; }
 .quick { overflow: visible; }

@@ -561,9 +561,9 @@ def test_categories_de_jeddah_sans_categorie_vide(client, base_temp, jeddah_on):
     now = datetime.now(UTC) + timedelta(hours=2)
     _put(base_temp, [_jed("Concert", now, category="music"), _jed("Expo", now, category="expo", source_id="x")])
     c = client.get("/api/categories", params={"city": "jeddah"}).json()
-    assert {g["key"] for g in c["groups"]} == {"concerts", "culture-art"}
-    # Filtrer par groupe : « culture-art » regroupe expo + théâtre + rencontres.
-    r = client.get("/api/events", params={"city": "jeddah", "radius": 30, "when": "week", "category": "culture-art"}).json()
+    assert {g["key"] for g in c["groups"]} == {"music", "art-culture"}
+    # Filtrer par groupe : « art-culture » regroupe expo + théâtre.
+    r = client.get("/api/events", params={"city": "jeddah", "radius": 30, "when": "week", "category": "art-culture"}).json()
     assert [e["title"] for e in r["events"]] == ["Expo"]
 
 

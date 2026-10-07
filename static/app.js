@@ -119,7 +119,10 @@
     const m = /^[a-z]+:(https?:\/\/[^/]+)/i.exec(src);
     return m ? m[1].replace(/^https?:\/\//, "") : src;
   };
-  const statusNote = (e) => (e.status === "cancelled" ? t("cancelled") : e.status === "postponed" ? t("postponed") : "");
+  /* Un événement terminé n'est jamais présenté comme une suggestion : les listes l'écartent déjà
+     (fenêtre), mais un lien partagé ou un favori peut y ramener : la fiche le dit (15.46). */
+  const isOver = (e) => new Date(e.end || new Date(e.start).getTime() + 3 * 36e5) < Date.now();
+  const statusNote = (e) => (e.status === "cancelled" ? t("cancelled") : e.status === "postponed" ? t("postponed") : isOver(e) ? t("ended") : "");
 
   /* Une carte : HEURE, TITRE, lieu · distance, prix. Catégorie et mentions rares : discrètes. */
   function cardEl(e, { day = state.when !== "today" } = {}) {
@@ -816,7 +819,15 @@
   if (hash) {
     const want = +hash[1];
     const iv = setInterval(() => { if (byId.has(want)) { clearInterval(iv); select(want, { open: true }); } }, 300);
-    setTimeout(() => clearInterval(iv), 6000);
+    /* Hors de la liste affichée (demain, déjà terminé…) : le lien partagé doit quand même ouvrir la fiche. */
+    setTimeout(async () => {
+      clearInterval(iv);
+      if (byId.has(want) || !detail.hidden) return;
+      try {
+        const r = await fetch(api(`/api/events/${want}`, { lang: LANG }));
+        if (r.ok && detail.hidden) { const e = fixEnd(await r.json()); if (e && e.id === want) openDetail(e); }
+      } catch { /* lien périmé ou réseau : la liste reste affichée */ }
+    }, 3000);
   }
   sheetState("half");
   addEventListener("resize", () => map.invalidateSize());
