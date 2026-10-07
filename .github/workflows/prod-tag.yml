@@ -18,7 +18,7 @@ jobs:
     # Épinglé sur un commit de ci-templates (pas @master) : un changement du gabarit ne peut plus
     # modifier silencieusement ce qui autorise le déploiement. Dépôt privé donc invisible de
     # Dependabot : le SHA se met à jour à la main, après relecture du diff du gabarit (docs/release.md).
-    uses: flemops/ci-templates/.github/workflows/valider-et-taguer.yml@4a48712a9e096bbcdbad47669d5b0ef5efe3aa4c  # master au 06/10/2026
+    uses: flemops/ci-templates/.github/workflows/valider-et-taguer.yml@9735d856b021e655984c9b9006b35c327662456e  # v1.0.0
     with:
       runtime: python
       # Version de la VM (migrée en 3.12.15 le 07/10/2026) : le tag `prod` ne se déplace que si les tests
