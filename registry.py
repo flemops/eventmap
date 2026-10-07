@@ -11,8 +11,8 @@ Une source n'est interrogée que si TOUT ceci est vrai :
 
 Politique d'ingestion par source (13.45) : `refresh_hours` (cadence : on ne la
 réinterroge pas plus souvent), `timeout_s`, `retries` (avec attente
-exponentielle), `min_interval_s` (délai entre deux requêtes sur le même
-domaine).
+exponentielle + gigue), `min_interval_s` (délai entre deux requêtes sur le même
+domaine), `stale_after_hours` (optionnel : fraîcheur attendue de CETTE source, sinon celle de la ville ; 14.4).
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ class SourceSpec:
     timeout_s: float = 120.0
     retries: int = 1
     min_interval_s: float = 1.0
+    stale_after_hours: float | None = None      # None : la valeur de la ville (cities.yaml)
     geo_bbox: dict | None = None
     note: str = ""
     attribution: str = ""
@@ -102,6 +103,7 @@ def load(path: Path | None = None) -> list[SourceSpec]:
                 timeout_s=float(feed.get("timeout_s", 120)),
                 retries=int(feed.get("retries", 1)),
                 min_interval_s=float(feed.get("min_interval_s", 1.0)),
+                stale_after_hours=(float(feed["stale_after_hours"]) if feed.get("stale_after_hours") else None),
                 geo_bbox=feed.get("geo_bbox"), note=feed.get("note", "") or "",
                 attribution=feed.get("attribution", "") or "", home=feed.get("home", "") or "",
                 options=dict(feed.get("options") or {}),

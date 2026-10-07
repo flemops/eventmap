@@ -15,7 +15,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 DB_PATH = os.environ.get("EVENTMAP_DB", "data/eventmap.db")
 
@@ -107,6 +107,13 @@ CREATE TABLE IF NOT EXISTS feeds (
 # Au-delà de ce nombre d'échecs consécutifs, un flux est désactivé : on ne
 # martèle pas un domaine mort à chaque refresh, et on ne fait pas bannir l'IP.
 FEED_MAX_ERRORS = int(os.environ.get("EVENTMAP_FEED_MAX_ERRORS", "5"))
+# Circuit breaker (14.7) : la désactivation est TEMPORAIRE. Après FEED_MAX_ERRORS échecs, la source est
+# coupée BREAKER_BASE_H heures (puis ×2 à chaque sonde ratée, plafonné à BREAKER_MAX_H), sans toucher aux autres
+# sources ni aux villes. Passé le délai elle est sondée à chaque cycle ; BREAKER_CLOSE_SUCCESSES réussites de suite
+# la remettent en service. `enabled = 0` posé À LA MAIN (breaker_until NULL) n'est jamais réactivé automatiquement.
+BREAKER_BASE_H = 6.0
+BREAKER_MAX_H = 24.0
+BREAKER_CLOSE_SUCCESSES = 2
 
 
 @dataclass
@@ -203,7 +210,9 @@ def _migrate(con: sqlite3.Connection) -> None:
         con.execute("UPDATE events SET country_code = 'FR' WHERE country_code IS NULL")
 
     fcols = {r["name"] for r in con.execute("PRAGMA table_info(feeds)")}
-    for name, decl in {"feed_id": "TEXT", "city_id": "TEXT NOT NULL DEFAULT 'paris'"}.items():
+    for name, decl in {"feed_id": "TEXT", "city_id": "TEXT NOT NULL DEFAULT 'paris'",
+                       "breaker_level": "INTEGER NOT NULL DEFAULT 0", "breaker_until": "TEXT",
+                       "probe_ok": "INTEGER NOT NULL DEFAULT 0"}.items():
         if name not in fcols:
             con.execute(f"ALTER TABLE feeds ADD COLUMN {name} {decl}")
 
@@ -622,10 +631,57 @@ def list_feeds(con: sqlite3.Connection, enabled_only: bool = True) -> list[dict]
     return [dict(r) for r in con.execute(q)]
 
 
+def free_space_mb(path: str | None = None) -> float | None:
+    """Espace libre (Mo) du volume qui porte la base ; None si illisible (jamais une exception : c'est une garde)."""
+    import shutil
+    try:
+        return shutil.disk_usage(os.path.dirname(os.path.abspath(path or DB_PATH))).free / 1048576
+    except OSError:
+        return None
+
+
+def checkpoint(con: sqlite3.Connection) -> None:
+    """Ramène le journal WAL dans la base (14.18) : sans cela il grossit tant qu'un lecteur reste ouvert."""
+    try:
+        con.execute("PRAGMA wal_checkpoint(PASSIVE)")
+    except sqlite3.OperationalError:       # lecteur concurrent : ce n'est qu'un entretien, le prochain cycle réessaie
+        pass
+
+
+def feeds_to_probe(con: sqlite3.Connection, now: datetime | None = None) -> list[dict]:
+    """Flux coupés par le breaker dont le délai est écoulé : à sonder ce cycle (jamais les flux éteints à la main)."""
+    now_iso = _iso(_to_utc(now or datetime.now(timezone.utc)))
+    return [dict(r) for r in con.execute(
+        "SELECT * FROM feeds WHERE enabled = 0 AND breaker_until IS NOT NULL AND breaker_until <= ? ORDER BY url",
+        (now_iso,))]
+
+
+def breaker_open(con: sqlite3.Connection) -> list[dict]:
+    """Flux actuellement coupés (ou en sonde) par le breaker, pour /health."""
+    return [dict(r) for r in con.execute(
+        "SELECT url, feed_id, city_id, breaker_level, breaker_until, probe_ok, last_error FROM feeds "
+        "WHERE breaker_level > 0 ORDER BY url")]
+
+
 def mark_feed(con: sqlite3.Connection, url: str, *, ok: bool, error: str | None = None,
               etag: str | None = None, last_modified: str | None = None) -> bool:
-    """Met à jour l'état d'un flux. Retourne True s'il vient d'être désactivé."""
-    now = _iso(datetime.now(timezone.utc))
+    """Met à jour l'état d'un flux. Retourne True si le breaker vient de (re)couper ce flux."""
+    now_dt = datetime.now(timezone.utc)
+    now = _iso(now_dt)
+    row = con.execute("SELECT breaker_level, probe_ok FROM feeds WHERE url = ?", (url,)).fetchone()
+    level, probes = (row["breaker_level"], row["probe_ok"]) if row else (0, 0)
+    if ok and level > 0:
+        # Sonde réussie : on ne referme qu'après plusieurs succès consécutifs (une seule réussite peut être un hasard).
+        probes += 1
+        if probes >= BREAKER_CLOSE_SUCCESSES:
+            con.execute("UPDATE feeds SET enabled = 1, breaker_level = 0, breaker_until = NULL, probe_ok = 0, "
+                        "error_count = 0, last_ok = ?, last_error = NULL WHERE url = ?", (now, url))
+        else:
+            con.execute("UPDATE feeds SET probe_ok = ?, breaker_until = ?, last_ok = ? WHERE url = ?",
+                        (probes, now, now, url))
+        con.execute("UPDATE feeds SET etag = COALESCE(?, etag), last_modified = COALESCE(?, last_modified) "
+                    "WHERE url = ?", (etag, last_modified, url))
+        return False
     if ok:
         con.execute(
             """UPDATE feeds SET last_ok = ?, last_error = NULL, error_count = 0,
@@ -641,8 +697,12 @@ def mark_feed(con: sqlite3.Connection, url: str, *, ok: bool, error: str | None 
         ((error or "unknown")[:500], url),
     )
     count = con.execute("SELECT error_count FROM feeds WHERE url = ?", (url,)).fetchone()
-    if count and count[0] >= FEED_MAX_ERRORS:
-        con.execute("UPDATE feeds SET enabled = 0 WHERE url = ?", (url,))
+    if count and (count[0] >= FEED_MAX_ERRORS or level > 0):          # seuil atteint, ou sonde ratée
+        level = min(level + 1, 5)
+        hours = min(BREAKER_MAX_H, BREAKER_BASE_H * 2 ** (level - 1))
+        until = _iso(now_dt + timedelta(hours=hours))
+        con.execute("UPDATE feeds SET enabled = 0, breaker_level = ?, breaker_until = ?, probe_ok = 0 WHERE url = ?",
+                    (level, until, url))
         return True
     return False
 

@@ -192,3 +192,78 @@ def test_une_base_verrouillee_ne_tue_pas_la_lecture(base):
     finally:
         writer.rollback()
         writer.close()
+
+
+# ------------------------------------------------------------------ circuit breaker (14.7) et alerte anti-bruit (14.20)
+
+def test_alerte_breaker_seulement_a_partir_de_la_seconde_coupure(base, monkeypatch):
+    monkeypatch.setattr(db, "FEED_MAX_ERRORS", 2)
+    con = db.connect(base)
+    db.upsert_feed(con, "https://x/a.ics", "ics", feed_id="x-a")
+    for _ in range(2):
+        db.mark_feed(con, "https://x/a.ics", ok=False, error="boom")           # 1re coupure : niveau 1
+    con.commit()
+
+    def kinds():
+        return {a["kind"] for a in main.compute_alerts(con, datetime.now(UTC))}
+
+    assert "source_breaker" not in kinds()           # une première coupure se répare seule : on ne réveille personne
+    db.mark_feed(con, "https://x/a.ics", ok=False, error="boom")               # la sonde rate : niveau 2
+    con.commit()
+    assert "source_breaker" in kinds()
+    con.close()
+
+
+def test_le_cycle_sonde_une_source_coupee_une_fois_le_delai_ecoule(base, monkeypatch):
+    monkeypatch.setattr(db, "FEED_MAX_ERRORS", 1)
+    con = db.connect(base)
+    spec = next(s for s in registry.load() if s.kind != "qfap" and s.runnable())
+    db.upsert_feed(con, spec.url, spec.kind, name=spec.name, feed_id=spec.id, city=spec.city_id)
+    db.mark_feed(con, spec.url, ok=False, error="boom")
+    con.commit()
+    fetchers, _ = main._build_fetchers(con, datetime.now(UTC))
+    assert spec.url not in fetchers                                            # coupée : pas interrogée
+    fetchers, _ = main._build_fetchers(con, datetime.now(UTC) + timedelta(hours=7))
+    assert spec.url in fetchers                                                # délai écoulé : sondée
+    con.close()
+
+
+def test_fraicheur_attendue_propre_a_une_source(monkeypatch):
+    """14.4 : `stale_after_hours` d'une source l'emporte sur celui de la ville ; absent = valeur de la ville."""
+    import yaml
+    spec = registry.load()[0]
+    assert spec.stale_after_hours is None or spec.stale_after_hours > 0
+    raw = {"feeds": [{"id": "z", "city": "paris", "url": "https://x/z.ics", "type": "ics", "stale_after_hours": 12}]}
+    import pathlib
+    import tempfile
+    f = pathlib.Path(tempfile.mkdtemp()) / "feeds.yaml"
+    f.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    monkeypatch.setattr(registry, "FEEDS_FILE", f)
+    assert [s.stale_after_hours for s in registry.load() if s.id == "z"] == [12.0]
+
+
+def test_disque_presque_plein_suspend_le_cycle_et_leve_l_alerte(base, monkeypatch):
+    """14.18 : sous le seuil, aucun cycle n'écrit (le contenu servi reste) ; à 2x le seuil, alerte `disk_low`."""
+    import asyncio
+    monkeypatch.setattr(db, "free_space_mb", lambda path=None: 50.0)
+    monkeypatch.setattr(main, "MIN_FREE_MB", 200)
+    res = asyncio.run(main.refresh())
+    assert res == [] and main._refresh_state["last_results"][0]["error"].startswith("cycle suspendu")
+    con = db.connect(base)
+    kinds = {a["kind"] for a in main.compute_alerts(con, datetime.now(UTC))}
+    assert {"disk_low", "refresh_failed"} <= kinds
+    monkeypatch.setattr(db, "free_space_mb", lambda path=None: 1000.0)
+    assert "disk_low" not in {a["kind"] for a in main.compute_alerts(con, datetime.now(UTC))}
+    con.close()
+
+
+def test_base_perdue_se_reconstruit_sans_edition_manuelle(tmp_path):
+    """14.24 : une base absente → schéma recréé au premier connect(), puis un lot de source la repeuple (voir runbook)."""
+    path = str(tmp_path / "neuve.db")
+    con = db.connect(path)
+    tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"events", "feeds", "source_health", "funnel"} <= tables
+    db.upsert_events(con, _evs(5))
+    con.commit()
+    assert con.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 5
+    con.close()
