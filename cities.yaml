@@ -69,17 +69,6 @@ cities:
     home: carte
     default_price: ""
     features: {cultures: false, linkcheck: true}
-    # Premier niveau de catégories affiché (13.23). Les clés sont celles du
-    # vocabulaire commun (sources.CATEGORY_KEYWORDS) ; seules les catégories qui
-    # ont de vrais événements à venir sont montrées.
-    category_groups:
-      concerts: [music]
-      culture-art: [expo, theatre, talk]
-      cinema: [cinema]
-      sports: [sport]
-      food-markets: [market]
-      workshops: [workshop]
-      family: [kids]
-      experiences: [other]
+    # Catégories de premier niveau : taxonomie commune (cities.DEFAULT_CATEGORY_GROUPS, 15.21).
     stale_after_hours: 36
     sources: []

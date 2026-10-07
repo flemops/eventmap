@@ -68,6 +68,8 @@ def ingest_window(now: datetime | None = None) -> tuple[datetime, datetime]:
 # des sources sur une petite liste stable, que le front peut afficher telle
 # quelle. L'ordre compte : le premier mot-clé trouvé gagne.
 CATEGORY_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
+    # « club » seul serait trop large (club de lecture, club de foot) : termes explicites seulement.
+    ("nightlife", ("clubbing", "nightclub", "night club", "boîte de nuit", "after party", "afterparty", "dj set")),
     ("music",     ("concert", "musique", "music", "dj", "jazz", "rock", "rap", "électro", "electro")),
     ("theatre",   ("théâtre", "theatre", "spectacle", "danse", "cirque", "humour", "opéra")),
     ("cinema",    ("cinéma", "cinema", "film", "projection", "ciné")),

@@ -40,6 +40,11 @@ def seed() -> None:
         ev(4, "Cinéma", 5, 2, 48.8700, 2.3300, price_type="paid", category="cinema", venue="Ciné D"),
         ev(5, "Théâtre", 6, 2, 48.8650, 2.3600, price_type="paid", category="theatre", venue="Théâtre E"),
         ev(6, "Marché", 7, 2, 48.8500, 2.3400, price_type="free", category="market", venue="Place F"),
+        # Cas difficiles (15.59) : lien externe invalide, événement déjà terminé, événement de demain.
+        ev(7, "Lien invalide", 3, 2, 48.8560, 2.3520, price_type="free", category="talk", venue="Salle G",
+           url="javascript:alert(1)", booking_url="pas une url"),
+        ev(8, "Déjà terminé", -6, 2, 48.8540, 2.3450, price_type="free", category="music", venue="Salle H"),
+        ev(9, "Demain", 30, 2, 48.8570, 2.3480, price_type="free", category="expo", venue="Salle I"),
     ]
     con = db.connect()
     db.upsert_events(con, rows)
