@@ -97,8 +97,13 @@ GitHub Actions.** No build step, no front-end framework, no external service to 
 * **Availability vs data**: `/health` always answers 200 while the service runs; data problems appear in
   `alerts` and make `/health?strict=1` return 503 (stalled refresh, failed cycle, never ingested, repeated
   errors, silent source, stale data, missing geocoding). The UI tells "no events" from "data outage".
-* **Isolation**: sources and cities have independent cadence, timeout and kill-switches
-  (`EVENTMAP_SOURCES_DISABLED`, `EVENTMAP_CITIES_DISABLED`).
+* **Isolation**: sources and cities have independent cadence, timeout, retries (exponential back-off with jitter) and
+  kill-switches (`EVENTMAP_SOURCES_DISABLED`, `EVENTMAP_CITIES_DISABLED`).
+* **Circuit breaker, quarantine, disk guard** (all deterministic, no LLM): a source that keeps failing is cut for 6 h
+  (doubling up to 24 h) then probed until two consecutive successes; an abnormal batch (volume collapse, geocoding
+  break) is quarantined while the last healthy content stays served; a refresh is suspended when the disk is nearly full.
+  Alerts stay quiet for self-healing failures ([D22/D23](docs/decisions.md)). Daily per-source health history:
+  `GET /api/health/history`. The few cases that need a human are in the [runbook](docs/runbook.md).
 * **Responsiveness**: the heavy write phase of a refresh runs in a worker thread, so the API (and `/health`)
   stays live during ingestion.
 * **Additive migrations**: an older release keeps working on a migrated database, so a rollback is safe
@@ -109,6 +114,10 @@ GitHub Actions.** No build step, no front-end framework, no external service to 
 * **Tests** (offline, `pytest`): risk-based map in [`docs/tests.md`](docs/tests.md) — connector contracts on real
   upstream records, migrations (including *old code on a migrated database*), invariants (city isolation, no visible
   duplicate, last-known-good, no naive dates), health and alerts. Coverage is measured; the CI enforces a floor.
+* **Browser tests** ([`tests/e2e/`](tests/e2e/), Chromium via Playwright, throw-away database): first visit → Tonight, filters,
+  event panel and shared links, My Evening (overlap, shared link, `.ics`), saved events, hard data cases (invalid external
+  link, ended event, duplicate, multi-date series) and an axe-core accessibility scan at 1440 / 1280 / 1024 / 390 px
+  ([`e2e.yml`](.github/workflows/e2e.yml)).
 * **CI on every PR** ([`ci.yml`](.github/workflows/ci.yml)): Ruff, tests + coverage, Python 3.10 / 3.12 / 3.13, `pip-audit` +
   SBOM, gitleaks. **On `master`** ([`prod-tag.yml`](.github/workflows/prod-tag.yml)): the same checks on the production
   Python, a "production dependencies alone are enough" check, then the `prod` tag moves and the VM pulls it.
@@ -178,7 +187,9 @@ tied to **measured thresholds** (latency p95, rows per city, write contention, c
 * Some venues are deliberately not integrated (terms or technical blockers, evidence in [`docs/sources.md`](docs/sources.md)).
 * The production VM still runs Python 3.10; CI proves 3.12/3.13 and the migration plan is in
   [`docs/python-runtime.md`](docs/python-runtime.md).
-* No automated browser tests (map, keyboard, responsive are checked by hand); single node, no high availability.
+* Browser tests cover the main journeys, not pixel-level visual regression or a real screen reader (manual); single node, no high
+  availability. On a throttled CPU (×4) the first event card takes about 11 s ([`docs/performance.md`](docs/performance.md)):
+  a mobile-performance pass is the next step.
 * Branch protection is not enabled (not available on the current GitHub plan for a private repository).
 
 ## Run it locally
