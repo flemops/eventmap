@@ -439,3 +439,19 @@ et en-têtes/CSP vérifiés sur le service réel par `deploy/verify_prod.py`.
 
 **Reste hors dépôt (accès VM requis)** : 14.0 (DNS), 14.3 (worker + timers systemd), 14.9 (watchdog), 14.10, 14.15–14.17
 (déploiement transactionnel côté VM), 14.28 (période d'observation).
+
+## Lire l'entonnoir anonyme (15.52)
+
+`GET /api/funnel` donne des totaux par étape depuis le 30/09/2026. Les questions produit, et le rapport qui y répond :
+
+| Question | Rapport |
+|---|---|
+| Ouvre-t-on la ville et trouve-t-on un événement ? | `event_open + pick_open` / `city_open` |
+| Les « top picks » servent-ils ? | `pick_open` / (`pick_open + event_open`) |
+| Les filtres sont-ils utilisés ? | `filter_used` / `city_open` |
+| Garde-t-on / partage-t-on / planifie-t-on ? | `save`, `share`, `evening_add`, `calendar_add` rapportés à `event_open + pick_open` |
+| Mène-t-on à l'action ? | `official_click + directions_click` rapportés à `event_open + pick_open` |
+
+Lecture du 07/10/2026 : 17 ouvertures de ville, 1 ouverture d'événement, aucune de « top pick ». **Volume insuffisant pour
+conclure** (et ces compteurs contiennent des visites de vérification faites ce jour-là) : ne tirer aucune décision produit
+d'un tel échantillon ; relire ce tableau après quelques centaines d'ouvertures de ville.

@@ -73,3 +73,23 @@ y contribue probablement. **Cause non isolée** (pas d'accès SSH pour profiler 
 `verify_prod.py` tolère donc une sonde isolée sous 10 s (médiane < 3 s) mais échoue sur un vrai gel.
 Piste si cela gêne un jour : préchauffer le service au démarrage (une requête interne) et/ou ne dédupliquer que
 les lignes nouvelles ou modifiées (voir `docs/scaling.md`).
+
+## Interface dans un navigateur (production, 07/10/2026, 15.56)
+
+Mesuré avec Chromium (Playwright) sur `https://eventmap.hamdy-tabsissi.com/?when=week`, tuiles OpenStreetMap
+bloquées (la carte ne conditionne pas la liste), poste Windows : à lire comme un ordre de grandeur, pas une garantie.
+
+| Mesure | Ordinateur 1440 px | Même poste, CPU ×4 |
+|---|---|---|
+| Titre (`h1`) visible | 0,4 s | 3,3 s |
+| Première carte d'événement | 1,3 s | 10,8 s |
+| `DOMContentLoaded` / `load` | 0,57 / 0,61 s | 5,1 / 5,2 s |
+| Cartes dans le DOM | 100 (plafond de l'API : `limit` ≤ 300, 100 par défaut) | idem |
+| Nœuds DOM au total | ≈ 1 500 | idem |
+| Saisie dans « Search events » (200 ms de temporisation) | réactif (< 50 ms de rendu) | 0,3 s |
+
+* Pas de milliers de cartes : l'API borne la liste, la recherche textuelle filtre ce qui est déjà chargé.
+* Aucune image d'événement n'est chargée (le produit n'en affiche pas), donc rien à différer.
+* **Limite connue** : sous un CPU ralenti ×4 (téléphone d'entrée de gamme), la première carte met ≈ 11 s ; c'est
+  la piste principale de la future phase mobile (JS Leaflet + markercluster + 100 marqueurs). Non traitée ici : la phase 15 est
+  « ordinateur d'abord » (15.3).

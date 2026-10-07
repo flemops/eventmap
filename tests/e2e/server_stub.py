@@ -45,9 +45,15 @@ def seed() -> None:
            url="javascript:alert(1)", booking_url="pas une url"),
         ev(8, "Déjà terminé", -6, 2, 48.8540, 2.3450, price_type="free", category="music", venue="Salle H"),
         ev(9, "Demain", 30, 2, 48.8570, 2.3480, price_type="free", category="expo", venue="Salle I"),
+        # Plusieurs horaires (une série) et un doublon inter-source écarté à la lecture (15.59).
+        ev(10, "Série", 4, 1, 48.8580, 2.3460, price_type="free", category="theatre", venue="Salle J"),
+        ev(11, "Série", 28, 1, 48.8580, 2.3460, price_type="free", category="theatre", venue="Salle J"),
+        ev(12, "Doublon du concert", 1, 2, 48.8584, 2.3470, price_type="free", category="music", venue="Salle A"),
     ]
     con = db.connect()
     db.upsert_events(con, rows)
+    # Le doublon pointe vers l'original (voir sources.dedup_inter_source) : jamais supprimé, écarté à la lecture.
+    con.execute("UPDATE events SET doublon_de = (SELECT id FROM events WHERE source_id = 'e2e-1') WHERE source_id = 'e2e-12'")
     con.commit()
     con.close()
 

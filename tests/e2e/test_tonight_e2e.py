@@ -163,4 +163,17 @@ def test_taxonomie_courte_et_sans_categorie_vide(page, base_url):
     assert {"Music", "Art & Culture", "Talks & Conferences", "Workshops", "Cinema", "Food & Markets"} <= set(labels)
     assert "Nightlife" not in labels and "Sports" not in labels          # aucun événement : aucun filtre vide
     page.click("#fp-cats [data-cat='art-culture']")
-    page.wait_for_function("[...document.querySelectorAll('#list button.ev h3')].length > 0 && [...document.querySelectorAll('#list button.ev h3')].every(h => /Demain/.test(h.textContent))")
+    page.wait_for_function("[...document.querySelectorAll('#list button.ev h3')].length > 0 && [...document.querySelectorAll('#list button.ev h3')].every(h => /Demain|Série/.test(h.textContent))")
+
+
+def test_doublon_ecarte_et_serie_a_plusieurs_horaires(page, base_url):
+    """Un doublon inter-source n'apparaît jamais ; une série garde chacune de ses dates (15.59)."""
+    page.goto(base_url + WEEK)
+    page.wait_for_selector("#list button.ev")
+    page.wait_for_function("document.querySelectorAll('#list button.ev').length >= 2")
+    tous = titles(page)
+    assert not any("Doublon du concert" in t for t in tous)
+    assert sum("Concert gratuit" in t for t in tous) >= 1
+    page.click("#free")                                    # tous les prix : la série est gratuite, donc déjà visible
+    serie = [t for t in titles(page) if "Série" in t]
+    assert len(serie) == 2 or len(serie) == 4              # 4 si le bloc « top picks » en répète deux
