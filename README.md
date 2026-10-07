@@ -31,7 +31,7 @@ reversible de-duplication, strict health checks, and a CI gate in front of every
 | **Reversible cross-source de-duplication** (strong / weak / translation matches; nothing deleted) | [`docs/multi-ville.md`](docs/multi-ville.md) · D15 |
 | **Config-driven multi-city engine**: no `if city == …` in the code; a city is one YAML entry; a dark-launched city is invisible to the API | [`cities.yaml`](cities.yaml) · `test_une_requete_paris_ne_renvoie_jamais_jeddah` |
 | **Defence in depth**: SSRF guard on every redirect, text sanitising, nginx limits and CSP, hardened systemd unit | [`safety.py`](safety.py), [`deploy/`](deploy/) |
-| **CI/CD with a real gate**: lint, tests + coverage floor, dependency audit + SBOM, secret scan, Python 3.10/3.12/3.13 matrix; the `prod` tag only moves after a green gate; post-deploy check compares the live commit | [`.github/workflows/`](.github/workflows/) · [`docs/release.md`](docs/release.md) |
+| **CI/CD with a real gate**: lint, tests + coverage floor, dependency audit + SBOM, secret scan, Python 3.12/3.13 matrix; the `prod` tag only moves after a green gate; post-deploy check compares the live commit | [`.github/workflows/`](.github/workflows/) · [`docs/release.md`](docs/release.md) |
 | **Measured, not assumed**: reproducible benchmark and the thresholds that would justify leaving SQLite | [`deploy/bench.py`](deploy/bench.py) · [`docs/performance.md`](docs/performance.md) · [`docs/scaling.md`](docs/scaling.md) |
 
 ## Why this project exists
@@ -77,7 +77,7 @@ flowchart LR
     SD["systemd<br/>(sandboxed unit, CPU/RAM caps)"] -. runs .- Serve
 ```
 
-Stack: **Python 3.10+ · FastAPI · SQLite (WAL) · vanilla HTML/CSS/JS · Leaflet/OpenStreetMap · nginx · systemd ·
+Stack: **Python 3.12+ · FastAPI · SQLite (WAL) · vanilla HTML/CSS/JS · Leaflet/OpenStreetMap · nginx · systemd ·
 GitHub Actions.** No build step, no front-end framework, no external service to run it.
 
 ### Data pipeline
@@ -118,7 +118,7 @@ GitHub Actions.** No build step, no front-end framework, no external service to 
   event panel and shared links, My Evening (overlap, shared link, `.ics`), saved events, hard data cases (invalid external
   link, ended event, duplicate, multi-date series) and an axe-core accessibility scan at 1440 / 1280 / 1024 / 390 px
   ([`e2e.yml`](.github/workflows/e2e.yml)).
-* **CI on every PR** ([`ci.yml`](.github/workflows/ci.yml)): Ruff, tests + coverage, Python 3.10 / 3.12 / 3.13, `pip-audit` +
+* **CI on every PR** ([`ci.yml`](.github/workflows/ci.yml)): Ruff, tests + coverage, Python 3.12 / 3.13, `pip-audit` +
   SBOM, gitleaks. **On `master`** ([`prod-tag.yml`](.github/workflows/prod-tag.yml)): the same checks on the production
   Python, a "production dependencies alone are enough" check, then the `prod` tag moves and the VM pulls it.
 * **Post-deploy verification** ([`post-deploy.yml`](.github/workflows/post-deploy.yml)): waits for the expected commit to be
@@ -185,8 +185,8 @@ tied to **measured thresholds** (latency p95, rows per city, write contention, c
   writing yet ([`docs/jeddah-sources.md`](docs/jeddah-sources.md)). Reopening criterion: a written authorisation or
   a licensed API.
 * Some venues are deliberately not integrated (terms or technical blockers, evidence in [`docs/sources.md`](docs/sources.md)).
-* The production VM still runs Python 3.10; CI proves 3.12/3.13 and the migration plan is in
-  [`docs/python-runtime.md`](docs/python-runtime.md).
+* The production VM runs Python 3.12 (migrated from 3.10 on 07/10/2026, rollback and procedure in
+  [`docs/python-runtime.md`](docs/python-runtime.md)).
 * Browser tests cover the main journeys, not pixel-level visual regression or a real screen reader (manual); single node, no high
   availability. On a throttled CPU (×4) the first event card takes about 11 s ([`docs/performance.md`](docs/performance.md)):
   a mobile-performance pass is the next step.
@@ -194,7 +194,7 @@ tied to **measured thresholds** (latency p95, rows per city, write contention, c
 
 ## Run it locally
 
-Requirements: Python 3.10+ (3.12 recommended), Git.
+Requirements: Python 3.12+, Git.
 
 ```bash
 git clone https://github.com/flemops/eventmap.git && cd eventmap
