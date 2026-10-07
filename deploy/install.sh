@@ -19,7 +19,8 @@ id -u "$APP_USER" >/dev/null 2>&1 || useradd --system --home "$APP_DIR" --shell 
 echo "==> Python et venv"
 apt-get install -y -qq python3-venv >/dev/null
 cd "$APP_DIR"
-[[ -d .venv ]] || python3 -m venv .venv
+PY312="$(ls /opt/pybuild/python/cpython-3.12*/bin/python3.12 2>/dev/null | head -1)"   # Python autonome posé le 07/10/2026 (docs/python-runtime.md)
+[[ -d .venv ]] || "${PY312:-python3}" -m venv .venv
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q -r requirements.txt
 

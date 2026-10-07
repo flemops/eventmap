@@ -2,7 +2,7 @@
 name = "eventmap"
 version = "0.0.0"          # application déployée par git (tag `prod`), pas publiée sur PyPI
 description = "Agrégateur d'événements multi-ville : une proposition, au bon moment, déjà filtrée."
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 # Les dépendances d'exécution vivent dans requirements.txt (épinglées en ==, voir son en-tête :
 # le déploiement ET le rollback font `pip install -r requirements.txt`). Outils : requirements-dev.txt.
 

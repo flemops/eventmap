@@ -21,9 +21,9 @@ jobs:
     uses: flemops/ci-templates/.github/workflows/valider-et-taguer.yml@4a48712a9e096bbcdbad47669d5b0ef5efe3aa4c  # master au 06/10/2026
     with:
       runtime: python
-      # Version de la VM aujourd'hui : le tag `prod` ne se déplace que si les tests passent sur le
-      # runtime réellement déployé. À passer à 3.12 avec la migration de la VM (docs/python-runtime.md).
-      version: "3.10"
+      # Version de la VM (migrée en 3.12.15 le 07/10/2026) : le tag `prod` ne se déplace que si les tests
+      # passent sur le runtime réellement déployé (docs/python-runtime.md).
+      version: "3.12"
       install_cmd: pip install -r requirements-dev.txt
       lint_cmd: ruff check .
       test_cmd: pytest --cov --cov-fail-under=78
