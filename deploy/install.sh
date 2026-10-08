@@ -39,7 +39,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
 EVENTMAP_DB=${APP_DIR}/data/eventmap.db
 EVENTMAP_FEEDS=${APP_DIR}/feeds.yaml
 EVENTMAP_REFRESH_SECONDS=21600
-EVENTMAP_CONTACT=https://github.com/flemops/eventmap
+EVENTMAP_CONTACT=https://github.com/flemops/eventmap.hamdy-tabsissi.com
 EVENTMAP_LOG=INFO
 # OPENAGENDA_KEY=
 # ANTHROPIC_API_KEY=

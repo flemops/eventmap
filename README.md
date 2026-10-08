@@ -1,7 +1,7 @@
 # EventMap
 
-[![CI](https://github.com/flemops/eventmap/actions/workflows/ci.yml/badge.svg)](https://github.com/flemops/eventmap/actions/workflows/ci.yml)
-[![Prod gate](https://github.com/flemops/eventmap/actions/workflows/prod-tag.yml/badge.svg)](https://github.com/flemops/eventmap/actions/workflows/prod-tag.yml)
+[![CI](https://github.com/flemops/eventmap.hamdy-tabsissi.com/actions/workflows/ci.yml/badge.svg)](https://github.com/flemops/eventmap.hamdy-tabsissi.com/actions/workflows/ci.yml)
+[![Prod gate](https://github.com/flemops/eventmap.hamdy-tabsissi.com/actions/workflows/prod-tag.yml/badge.svg)](https://github.com/flemops/eventmap.hamdy-tabsissi.com/actions/workflows/prod-tag.yml)
 
 **"What should I do tonight?" — one answer, not a catalogue.** EventMap aggregates public cultural
 events, de-duplicates them across sources, and opens on *tonight in your city* (free events first, no location permission needed) instead of an
@@ -197,7 +197,7 @@ tied to **measured thresholds** (latency p95, rows per city, write contention, c
 Requirements: Python 3.12+, Git.
 
 ```bash
-git clone https://github.com/flemops/eventmap.git && cd eventmap
+git clone https://github.com/flemops/eventmap.hamdy-tabsissi.com.git && cd eventmap.hamdy-tabsissi.com
 python -m venv .venv && . .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt                 # runtime + dev tools (pytest, ruff, coverage, pip-audit)
 pytest                                              # offline test suite

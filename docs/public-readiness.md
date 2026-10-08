@@ -54,4 +54,4 @@ Dans tous les cas, les licences des **données** restent celles de `feeds.yaml` 
 3. Relire les brouillons éditoriaux (`cultures.yaml`) et la demande d'autorisation.
 4. Activer CodeQL (voir D20) et la protection de branche (gratuites sur un dépôt public).
 5. Ajouter la capture d'écran du produit au README si elle manque encore.
-6. Passer la visibilité en public (`gh repo edit flemops/eventmap --visibility public --accept-visibility-change-consequences`).
+6. Passer la visibilité en public (`gh repo edit flemops/eventmap.hamdy-tabsissi.com --visibility public --accept-visibility-change-consequences`).
