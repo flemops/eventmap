@@ -35,7 +35,7 @@ from textnorm import norm_key
 
 log = logging.getLogger("eventmap.sources")
 
-CONTACT_URL = os.environ.get("EVENTMAP_CONTACT", "https://github.com/flemops/eventmap")
+CONTACT_URL = os.environ.get("EVENTMAP_CONTACT", "https://github.com/flemops/eventmap.hamdy-tabsissi.com")
 # ASCII uniquement : un en-tête HTTP n'accepte pas les accents.
 USER_AGENT = f"EventMapFR/0.1 (+{CONTACT_URL}; non-commercial event aggregator)"
 
